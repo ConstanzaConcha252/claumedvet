@@ -232,9 +232,52 @@ select{cursor:pointer}
 .toast.show{display:block}
 .hr{border:none;border-top:1px solid var(--border);margin:12px 0}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--bg2);border-radius:4px}
+
+/* ── LOGIN ── */
+#loginScreen{
+  position:fixed;inset:0;z-index:9999;
+  background:linear-gradient(135deg,#145f6e 0%,#1a8fa0 55%,#1e9e8a 100%);
+  display:flex;align-items:center;justify-content:center;
+}
+.login-box{
+  background:#fff;border-radius:20px;padding:40px 44px;width:360px;
+  box-shadow:0 20px 60px rgba(0,0,0,.25);text-align:center;
+}
+.login-logo{width:72px;height:72px;object-fit:contain;border-radius:12px;margin-bottom:16px;}
+.login-title{font-family:'DM Serif Display',serif;font-size:26px;color:var(--teal-d);margin-bottom:4px;}
+.login-sub{font-size:13px;color:var(--ink4);margin-bottom:28px;}
+.login-field{text-align:left;margin-bottom:14px;}
+.login-field label{display:block;font-size:12px;font-weight:600;color:var(--ink3);letter-spacing:.03em;margin-bottom:5px;}
+.login-field input{width:100%;padding:10px 13px;border:1px solid var(--border);border-radius:10px;background:var(--bg);font-family:'DM Sans',sans-serif;font-size:14px;color:var(--ink);outline:none;transition:border-color .15s,box-shadow .15s;}
+.login-field input:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(30,143,160,.15);}
+.login-btn{width:100%;padding:11px;border-radius:10px;border:none;background:var(--teal);color:#fff;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:600;cursor:pointer;margin-top:6px;transition:background .15s;}
+.login-btn:hover{background:var(--teal-d);}
+.login-error{color:var(--red);font-size:13px;margin-top:10px;display:none;}
+.login-version{font-size:11px;color:var(--ink4);margin-top:20px;}
+@keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
 </style>
 </head>
 <body>
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen">
+  <div class="login-box">
+    <img class="login-logo" src="data:image/svg+xml,%3Csvg viewBox='0 0 120 120' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='120' height='120' rx='20' fill='%231e8fa0'/%3E%3Cpath d='M18 58L60 16L102 58L102 106L18 106Z' stroke='white' stroke-width='5' fill='none' stroke-linejoin='round'/%3E%3Cpath d='M8 60L60 12L112 60' stroke='white' stroke-width='5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M60 82C60 82 43 69 43 59.5C43 53.5 47.8 48.5 54 48.5C57.2 48.5 59.5 50.5 60 52C60.5 50.5 62.8 48.5 66 48.5C72.2 48.5 77 53.5 77 59.5C77 69 60 82 60 82Z' stroke='white' stroke-width='4' fill='none'/%3E%3C/svg%3E" alt="ClauMedVet"/>
+    <div class="login-title">ClauMedVet</div>
+    <div class="login-sub">Sistema de Gestión Veterinaria</div>
+    <div class="login-field">
+      <label>Usuario</label>
+      <input type="text" id="loginUser" placeholder="Tu usuario" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus()"/>
+    </div>
+    <div class="login-field">
+      <label>Contraseña</label>
+      <input type="password" id="loginPass" placeholder="Tu contraseña" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/>
+    </div>
+    <button class="login-btn" onclick="doLogin()">Entrar</button>
+    <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
+    <div class="login-version">ClauMedVet · Curicó</div>
+  </div>
+</div>
 
 <!-- SIDEBAR -->
 <aside class="sidebar">
@@ -285,6 +328,7 @@ select{cursor:pointer}
       <input type="text" id="searchInput" placeholder="Buscar paciente…" oninput="onSearch()"/>
     </div>
     <button class="btn btn-teal" onclick="openNewPatientModal()">+ Nuevo paciente</button>
+    <button onclick="doLogout()" title="Cerrar sesión" style="padding:7px 10px;border-radius:9px;border:1px solid var(--border);background:none;cursor:pointer;font-size:16px;" >🔒</button>
   </header>
   <div class="content" id="mainContent"></div>
 </div>
@@ -1880,18 +1924,59 @@ function registerPay(invId){
 }
 
 // ══════════════════════════════════════════════════════
+//  AUTH — LOGIN / LOGOUT
+// ══════════════════════════════════════════════════════
+// Credenciales — cámbialas aquí cuando quieras
+const AUTH_USER = 'constanza';
+const AUTH_PASS = 'claumedvet2024';
+const SESSION_KEY = 'cmv_session';
+
+function checkSession(){
+  return sessionStorage.getItem(SESSION_KEY) === 'ok';
+}
+function doLogin(){
+  const user = document.getElementById('loginUser').value.trim().toLowerCase();
+  const pass = document.getElementById('loginPass').value;
+  const err  = document.getElementById('loginError');
+  if(user === AUTH_USER && pass === AUTH_PASS){
+    sessionStorage.setItem(SESSION_KEY,'ok');
+    document.getElementById('loginScreen').style.display='none';
+    err.style.display='none';
+    // Init app after successful login
+    loadDB();renderAll();
+    pullFromCloud().then(gotCloud=>{
+      if(!gotCloud && DB.patients.length===0){initSampleData();syncAllToCloud();}
+      renderAll();
+    });
+  } else {
+    err.style.display='block';
+    document.getElementById('loginPass').value='';
+    document.getElementById('loginPass').focus();
+    // Shake animation
+    const box=document.querySelector('.login-box');
+    box.style.animation='none';
+    setTimeout(()=>{box.style.animation='shake .4s ease';},10);
+  }
+}
+function doLogout(){
+  if(!confirm('¿Cerrar sesión?'))return;
+  sessionStorage.removeItem(SESSION_KEY);
+  location.reload();
+}
+
+// ══════════════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════════════
-loadDB(); // local cache first, for instant render
-renderAll();
-pullFromCloud().then(gotCloudData=>{
-  if(!gotCloudData && DB.patients.length===0){
-    // No cloud data and no local cache: seed sample data and push it up
-    initSampleData();
-    syncAllToCloud();
-  }
-  renderAll();
-});
+if(checkSession()){
+  // Already logged in — hide login screen and load app
+  document.getElementById('loginScreen').style.display='none';
+  loadDB();renderAll();
+  pullFromCloud().then(gotCloudData=>{
+    if(!gotCloudData && DB.patients.length===0){initSampleData();syncAllToCloud();}
+    renderAll();
+  });
+}
+// If not logged in, login screen stays visible — doLogin() handles the rest
 </script>
 </body>
 </html>
