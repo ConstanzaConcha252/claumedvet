@@ -127,6 +127,10 @@ tbody tr:hover td{background:var(--bg)}
 .detail-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;margin-bottom:14px}
 .profile-hero{display:flex;align-items:flex-start;gap:16px;padding:18px 22px;border-bottom:1px solid var(--border);flex-wrap:wrap}
 .hero-avatar{width:56px;height:56px;border-radius:50%;border:3px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0}
+.hero-avatar img{width:100%;height:100%;object-fit:cover;border-radius:50%;}
+.photo-upload-wrap{position:relative;display:inline-block;cursor:pointer;}
+.photo-upload-wrap:hover .photo-overlay{opacity:1;}
+.photo-overlay{position:absolute;inset:0;border-radius:50%;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .2s;font-size:16px;color:#fff;}
 .hero-name{font-family:'DM Serif Display',serif;font-size:20px;line-height:1.2}
 .hero-meta{font-size:13px;color:var(--ink3);margin-top:2px}
 .info-chips{display:flex;gap:9px;flex-wrap:wrap;padding:12px 22px;border-bottom:1px solid var(--border)}
@@ -438,7 +442,8 @@ function patientToRow(p){
     id:p.id,name:p.name,species:p.species,breed:p.breed||null,age:p.age||null,
     weight:p.weight||null,tutor:p.tutor,phone:p.phone||null,email:p.email||null,
     addresses:p.addresses||[],color:p.color||null,
-    vaccinations:p.vaccinations||[],history:p.history||[]
+    vaccinations:p.vaccinations||[],history:p.history||[],
+    photo:p.photo||null
   };
 }
 function apptToRow(a){
@@ -459,7 +464,8 @@ function rowToPatient(r){
     id:r.id,name:r.name,species:r.species,breed:r.breed||'',age:r.age||'0',
     weight:r.weight||'0',tutor:r.tutor,phone:r.phone||'',email:r.email||'',
     addresses:r.addresses||[],color:r.color||PAL[0],
-    vaccinations:r.vaccinations||[],history:r.history||[]
+    vaccinations:r.vaccinations||[],history:r.history||[],
+    photo:r.photo||null
   };
 }
 function rowToAppt(r){
@@ -678,6 +684,17 @@ function vacST(d){if(d===null)return 'Sin fecha';if(d<0)return 'Vencida';if(d===
 function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
 function validEmail(e){return !e||/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);}
 function checkEmail(id){const v=document.getElementById(id)?.value.trim();if(v&&!validEmail(v)){alert('El email ingresado no tiene un formato válido.\nEjemplo: correo@dominio.com');return false;}return true;}
+function validPhone(p){return !p||/^\+?[\d\s\-().]{7,15}$/.test(p.trim());}
+function checkPhone(id){const v=document.getElementById(id)?.value.trim();if(v&&!validPhone(v)){alert('El teléfono ingresado no tiene un formato válido.\nEjemplo: +56 9 1234 5678');return false;}return true;}
+function showPhoneHint(inputId,hintId){
+  const inp=document.getElementById(inputId);const hint=document.getElementById(hintId);if(!inp||!hint)return;
+  const v=inp.value.trim();
+  if(!v||v==='+569'){hint.style.display='none';return;}
+  const ok=validPhone(v);
+  hint.style.display='';
+  hint.textContent=ok?'✓ Formato correcto':'✗ Formato inválido (ej: +56 9 1234 5678)';
+  hint.style.color=ok?'var(--green-d)':'var(--red)';
+}
 function showEmailHint(inputId,hintId){
   const inp=document.getElementById(inputId);const hint=document.getElementById(hintId);if(!inp||!hint)return;
   const v=inp.value.trim();
@@ -819,7 +836,7 @@ function renderPatients(){
         const sc=pa.some(v=>daysUntil(v.next)<=7)?'s-alert':pa.length?'s-warn':'s-ok';
         const st=pa.some(v=>daysUntil(v.next)<=7)?'Urgente':pa.length?'Por vencer':'Al día';
         return `<tr onclick="nav('patient',${p.id})">
-          <td><div style="display:flex;align-items:center;gap:9px;"><div style="width:30px;height:30px;border-radius:50%;background:${p.color}22;display:flex;align-items:center;justify-content:center;font-size:14px;">${EMOJIS[p.species]}</div><b>${p.name}</b></div></td>
+          <td><div style="display:flex;align-items:center;gap:9px;"><div style="width:30px;height:30px;border-radius:50%;background:${p.color}22;display:flex;align-items:center;justify-content:center;font-size:14px;overflow:hidden;flex-shrink:0;">${p.photo?`<img src="${p.photo}" style="width:100%;height:100%;object-fit:cover;" alt="${p.name}"/>`:`${EMOJIS[p.species]}`}</div><b>${p.name}</b></div></td>
           <td><span class="tag ${TAG_CLASS[p.species]}">${SPECIES_ES[p.species]}</span> <span style="color:var(--ink4);font-size:11px;">${p.breed||''}</span></td>
           <td>${p.age}a</td><td>${p.weight}kg</td><td>${p.tutor}</td>
           <td style="color:var(--ink3)">${p.phone||'—'}</td>
@@ -1282,7 +1299,13 @@ function renderPatientDetail(){
     <span class="back-link" onclick="nav('patients')">← Volver a pacientes</span>
     <div class="detail-wrap">
       <div class="profile-hero">
-        <div class="hero-avatar" style="background:${p.color}22;">${EMOJIS[p.species]}</div>
+      <div class="photo-upload-wrap" onclick="triggerPhotoUpload(${p.id})" title="Cambiar foto">
+        <div class="hero-avatar" style="background:${p.color}22;">
+          ${p.photo?`<img src="${p.photo}" alt="${p.name}"/>`:`<span style="font-size:26px;">${EMOJIS[p.species]}</span>`}
+        </div>
+        <div class="photo-overlay">📷</div>
+      </div>
+      <input type="file" id="photoInput_${p.id}" accept="image/*" style="display:none;" onchange="handlePhotoUpload(event,${p.id})"/>
         <div style="flex:1;">
           <div class="hero-name">${p.name}</div>
           <div class="hero-meta">${SPECIES_ES[p.species]} · ${p.breed||'Sin raza'} · ${p.age} año${p.age!=1?'s':''}</div>
@@ -1341,7 +1364,11 @@ function openNewPatientModal(){
     <div class="hr"></div>
     <div class="form-row">
       <div class="form-group"><label>Tutor *</label><input id="f-tutor" type="text" placeholder="Nombre completo"/></div>
-      <div class="form-group"><label>Teléfono</label><input id="f-phone" type="tel" placeholder="+56 9 …" value="+569"/></div>
+      <div class="form-group">
+        <label>Teléfono</label>
+        <input id="f-phone" type="tel" placeholder="+56 9 1234 5678" value="+569" oninput="showPhoneHint('f-phone','f-phone-hint')"/>
+        <div id="f-phone-hint" style="font-size:11px;margin-top:3px;display:none;"></div>
+      </div>
     </div>
     <div class="form-group">
       <label>Email</label>
@@ -1360,6 +1387,7 @@ function saveNewPatient(){
   const tutor=document.getElementById('f-tutor').value.trim();
   if(!name){alert('El nombre es obligatorio.');return;}
   if(!tutor){alert('El tutor es obligatorio.');return;}
+  if(!checkPhone('f-phone'))return;
   if(!checkEmail('f-email'))return;
   const addr=document.getElementById('f-addr').value.trim();
   const p={id:DB.nextId++,name,species:document.getElementById('f-species').value,
@@ -1403,6 +1431,7 @@ function openEditPatientModal(pid){
 }
 function saveEditPatient(pid){
   const p=DB.patients.find(x=>x.id===pid);if(!p)return;
+  if(!checkPhone('f-phone'))return;
   if(!checkEmail('f-email'))return;
   p.name=document.getElementById('f-name').value.trim()||p.name;
   p.species=document.getElementById('f-species').value;
@@ -1412,7 +1441,21 @@ function saveEditPatient(pid){
   p.phone=document.getElementById('f-phone').value.trim();p.email=document.getElementById('f-email').value.trim();
   saveDB();closeModal();showToast('Actualizado ✓');renderAll();
 }
-function deletePatient(pid){
+function triggerPhotoUpload(pid){
+  const inp=document.getElementById(`photoInput_${pid}`);
+  if(inp)inp.click();
+}
+function handlePhotoUpload(event,pid){
+  const file=event.target.files[0];if(!file)return;
+  if(file.size>2*1024*1024){alert('La imagen es muy grande. Por favor usa una imagen de menos de 2MB.');return;}
+  const reader=new FileReader();
+  reader.onload=function(e){
+    const p=DB.patients.find(x=>x.id===pid);if(!p)return;
+    p.photo=e.target.result; // base64 data URL
+    saveDB();showToast('Foto actualizada ✓');renderAll();
+  };
+  reader.readAsDataURL(file);
+}
   if(!confirm('¿Eliminar este paciente y todo su historial?'))return;
   DB.patients=DB.patients.filter(x=>x.id!==pid);saveDB();pushDeletePatient(pid);closeModal();nav('patients');
 }
