@@ -271,13 +271,13 @@ select{cursor:pointer}
     <div class="login-sub">Sistema de Gestión Veterinaria</div>
     <div class="login-field">
       <label>Usuario</label>
-      <input type="text" id="loginUser" placeholder="Tu usuario" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus()"/>
+      <input type="text" id="loginUser" placeholder="Tu usuario" autocomplete="username"/>
     </div>
     <div class="login-field">
       <label>Contraseña</label>
-      <input type="password" id="loginPass" placeholder="Tu contraseña" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()"/>
+      <input type="password" id="loginPass" placeholder="Tu contraseña" autocomplete="current-password"/>
     </div>
-    <button class="login-btn" onclick="doLogin()">Entrar</button>
+    <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
     <div class="login-version">ClauMedVet · Curicó</div>
   </div>
@@ -1456,6 +1456,7 @@ function handlePhotoUpload(event,pid){
   };
   reader.readAsDataURL(file);
 }
+function deletePatient(pid){
   if(!confirm('¿Eliminar este paciente y todo su historial?'))return;
   DB.patients=DB.patients.filter(x=>x.id!==pid);saveDB();pushDeletePatient(pid);closeModal();nav('patients');
 }
@@ -2010,6 +2011,16 @@ function doLogout(){
 // ══════════════════════════════════════════════════════
 //  INIT
 // ══════════════════════════════════════════════════════
+// ── Wire login UI after DOM+JS ready ──
+document.addEventListener('DOMContentLoaded', function(){
+  var btn = document.getElementById('loginBtn');
+  var user = document.getElementById('loginUser');
+  var pass = document.getElementById('loginPass');
+  if(btn) btn.addEventListener('click', doLogin);
+  if(user) user.addEventListener('keydown', function(e){ if(e.key==='Enter') pass && pass.focus(); });
+  if(pass) pass.addEventListener('keydown', function(e){ if(e.key==='Enter') doLogin(); });
+});
+
 if(checkSession()){
   // Already logged in — hide login screen and load app
   document.getElementById('loginScreen').style.display='none';
