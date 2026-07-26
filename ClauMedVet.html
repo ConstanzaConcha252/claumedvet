@@ -133,6 +133,8 @@ tbody tr:hover td{background:var(--bg)}
 .hero-avatar-clickable:hover{filter:brightness(.92);}
 .avatar-edit-btn{position:absolute;bottom:-2px;right:-2px;width:23px;height:23px;border-radius:50%;background:var(--teal);color:#fff;border:2px solid var(--surface);font-size:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;line-height:1;box-shadow:0 1px 4px rgba(0,0,0,.25);}
 .avatar-edit-btn:hover{background:var(--teal-d);}
+.lightbox-close{position:fixed;top:16px;right:16px;width:40px;height:40px;border-radius:50%;background:rgba(20,25,30,.55);color:#fff;border:1px solid rgba(255,255,255,.35);font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:1100;}
+.lightbox-close:hover{background:rgba(20,25,30,.8);}
 .hero-name{font-family:'DM Serif Display',serif;font-size:20px;line-height:1.2}
 .hero-meta{font-size:13px;color:var(--ink3);margin-top:2px}
 .info-chips{display:flex;gap:9px;flex-wrap:wrap;padding:12px 22px;border-bottom:1px solid var(--border)}
@@ -172,6 +174,8 @@ tbody tr:hover td{background:var(--bg)}
 .filter-btn{padding:6px 13px;border-radius:20px;font-size:12px;font-weight:500;border:1px solid var(--border);background:var(--surface);cursor:pointer;color:var(--ink3);transition:all .15s}
 .filter-btn:hover{background:var(--bg)}
 .filter-btn.active{background:var(--teal-l);color:var(--teal-d);border-color:var(--teal-m);font-weight:600}
+.agenda-date-nav{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.agenda-date-nav input[type=date]{width:150px;}
 
 /* ── BILLING ── */
 .bill-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:8px;transition:box-shadow .15s}
@@ -294,6 +298,7 @@ select{cursor:pointer}
 }
 
 @media (max-width:480px){
+  .agenda-date-nav input[type=date]{width:132px;}
   .topbar-add-btn .btn-label{display:none}
   .topbar-add-btn{padding:8px 11px}
   [style*="grid-template-columns:repeat(3,minmax(0,1fr))"]{grid-template-columns:1fr!important}
@@ -325,7 +330,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.4</div>
   </div>
 </div>
 
@@ -366,6 +371,7 @@ select{cursor:pointer}
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
     <button onclick="exportBackup()" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo</button>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.4</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -1014,9 +1020,9 @@ function renderAgendaView(){
     </div>`).join('')}`;
   }).join('');
   const dayLabel=agendaDate===today?'Hoy':fmtDateLong(agendaDate);
-  const dateNav=agendaFilter==='dia'?`<div style="display:flex;align-items:center;gap:6px;">
+  const dateNav=agendaFilter==='dia'?`<div class="agenda-date-nav">
       <button class="btn btn-sm" onclick="agendaShiftDay(-1)" aria-label="Día anterior">←</button>
-      <input type="date" id="agendaDateInput" value="${agendaDate}" onchange="setAgendaDate(this.value)" style="width:150px;"/>
+      <input type="date" id="agendaDateInput" value="${agendaDate}" onchange="setAgendaDate(this.value)"/>
       <button class="btn btn-sm" onclick="agendaShiftDay(1)" aria-label="Día siguiente">→</button>
       ${agendaDate!==today?`<button class="btn btn-sm btn-teal" onclick="setAgendaDate(todayStr())">Hoy</button>`:''}
     </div>`:'';
@@ -1573,6 +1579,7 @@ function triggerPhotoUpload(pid){
 function openPhotoLightbox(pid){
   const p=DB.patients.find(x=>x.id===pid);if(!p||!p.photo)return;
   document.getElementById('modalContainer').innerHTML=`<div class="overlay" onclick="closeModal()">
+    <button class="lightbox-close" onclick="closeModal()" aria-label="Cerrar">✕</button>
     <img src="${p.photo}" alt="${p.name}" style="max-width:92vw;max-height:88vh;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.4);display:block;" onclick="event.stopPropagation()"/>
   </div>`;
 }
