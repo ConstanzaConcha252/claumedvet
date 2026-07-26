@@ -330,7 +330,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.7</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.8</div>
   </div>
 </div>
 
@@ -371,7 +371,7 @@ select{cursor:pointer}
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
     <button onclick="exportBackup()" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo</button>
-    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.7</div>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.8</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -1442,7 +1442,10 @@ function renderPatientDetail(){
     ${history.length===0?'<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Sin consultas</div></div>':
     history.map(h=>`<div class="history-card">
       <div class="hc-header"><span class="hc-date">${fmtDate(h.date)}</span>
-      <button class="btn btn-xs btn-danger" onclick="deleteVisit(${p.id},${h.id})">✕</button></div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-xs" onclick="openEditVisitModal(${p.id},${h.id})">✏ Editar</button>
+        <button class="btn btn-xs btn-danger" onclick="deleteVisit(${p.id},${h.id})">✕</button>
+      </div></div>
       <div class="hc-motivo">${h.motivo}</div>
       ${h.notas?`<div class="hc-notes">${h.notas}</div>`:''}
       ${h.peso||h.temp?`<div class="hc-vitals">${h.peso?`<span class="vital">⚖️ ${h.peso} kg</span>`:''}${h.temp?`<span class="vital">🌡️ ${h.temp}°C</span>`:''}</div>`:''}
@@ -1687,6 +1690,37 @@ function saveVisit(pid){
   saveDB();closeModal();showToast('Consulta registrada ✓');patientTab='historial';renderAll();
 }
 function deleteVisit(pid,hid){if(!confirm('¿Eliminar esta consulta?'))return;const p=DB.patients.find(x=>x.id===pid);if(!p)return;p.history=p.history.filter(h=>h.id!==hid);saveDB();showToast('Eliminada');renderAll();}
+function openEditVisitModal(pid,hid){
+  const p=DB.patients.find(x=>x.id===pid);if(!p)return;
+  const h=p.history.find(x=>x.id===hid);if(!h)return;
+  openModal(`<div class="modal">
+    <div class="modal-title">Editar consulta</div>
+    <div class="form-group"><label>Fecha *</label><input id="v-date" type="date" value="${h.date}"/></div>
+    <div class="form-group"><label>Motivo *</label><input id="v-motivo" type="text" placeholder="Control general, vacunación, urgencia…" value="${(h.motivo||'').replace(/"/g,'&quot;')}"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Peso (kg)</label><input id="v-peso" type="number" step="0.1" placeholder="12.5" value="${h.peso||''}"/></div>
+      <div class="form-group"><label>Temperatura (°C)</label><input id="v-temp" type="number" step="0.1" placeholder="38.5" value="${h.temp||''}"/></div>
+    </div>
+    <div class="form-group"><label>Notas clínicas</label><textarea id="v-notas" placeholder="Diagnóstico, tratamiento…">${h.notas||''}</textarea></div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" onclick="deleteVisit(${pid},${hid})">Eliminar</button>
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-teal" onclick="saveEditVisit(${pid},${hid})">Guardar cambios</button>
+    </div>
+  </div>`);
+}
+function saveEditVisit(pid,hid){
+  const p=DB.patients.find(x=>x.id===pid);if(!p)return;
+  const h=p.history.find(x=>x.id===hid);if(!h)return;
+  const motivo=document.getElementById('v-motivo').value.trim();
+  if(!motivo){alert('El motivo es obligatorio.');return;}
+  h.date=document.getElementById('v-date').value;
+  h.motivo=motivo;
+  h.peso=document.getElementById('v-peso').value;
+  h.temp=document.getElementById('v-temp').value;
+  h.notas=document.getElementById('v-notas').value.trim();
+  saveDB();closeModal();showToast('Consulta actualizada ✓');patientTab='historial';renderAll();
+}
 function openNewVaccineModal(pid){
   openModal(`<div class="modal modal-sm">
     <div class="modal-title">Agregar vacuna</div>
