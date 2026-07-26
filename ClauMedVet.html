@@ -259,6 +259,48 @@ select{cursor:pointer}
 .login-error{color:var(--red);font-size:13px;margin-top:10px;display:none;}
 .login-version{font-size:11px;color:var(--ink4);margin-top:20px;}
 @keyframes shake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+
+/* ══════════════════════════════════════════
+   RESPONSIVE — TABLET & MÓVIL
+   ══════════════════════════════════════════ */
+.stats-row{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+.menu-toggle{display:none;align-items:center;justify-content:center;width:36px;height:36px;border-radius:9px;border:1px solid var(--border);background:var(--surface);cursor:pointer;flex-shrink:0;font-size:18px;color:var(--ink2)}
+.menu-toggle:hover{background:var(--bg)}
+.sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(10,15,20,.45);z-index:1550}
+.sidebar-backdrop.show{display:block}
+.table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+@media (max-width:880px){
+  .menu-toggle{display:flex}
+  .sidebar{position:fixed;top:0;left:0;z-index:1600;transform:translateX(-100%);transition:transform .25s ease;box-shadow:0 0 40px rgba(0,0,0,.3)}
+  .sidebar.open{transform:translateX(0)}
+  .content{padding:14px}
+  .topbar{padding:10px 14px;flex-wrap:wrap;row-gap:8px}
+  .topbar-title{font-size:16px}
+  .search-wrap{order:5;flex:1 1 100%}
+  .search-wrap input{width:100%}
+  .grid-2{grid-template-columns:1fr}
+  .modal-lg{width:min(620px,92vw)}
+}
+
+@media (max-width:640px){
+  .modal,.modal-lg,.modal-sm{width:92vw;padding:18px;max-height:85vh}
+  .form-row,.form-row-3{grid-template-columns:1fr}
+  [style*="grid-template-columns:repeat(3,minmax(0,1fr))"]{grid-template-columns:1fr 1fr!important}
+}
+
+@media (max-width:480px){
+  .topbar-add-btn .btn-label{display:none}
+  .topbar-add-btn{padding:8px 11px}
+  [style*="grid-template-columns:repeat(3,minmax(0,1fr))"]{grid-template-columns:1fr!important}
+  .tab-bar{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .vac-row{flex-wrap:wrap;row-gap:6px}
+  .appt-card{flex-wrap:wrap}
+  .appt-divider{display:none}
+  .appt-actions{flex-direction:row;flex-wrap:wrap;width:100%;align-items:center;margin-top:8px}
+  .login-box{width:88vw;padding:30px 24px}
+  .stat-value{font-size:22px}
+}
 </style>
 </head>
 <body>
@@ -322,16 +364,18 @@ select{cursor:pointer}
     <button onclick="exportBackup()" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo</button>
   </div>
 </aside>
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
 
 <!-- MAIN -->
 <div class="main">
   <header class="topbar">
+    <button class="menu-toggle" id="menuToggle" onclick="toggleSidebar()" aria-label="Menú">☰</button>
     <div class="topbar-title" id="topbarTitle">Inicio</div>
     <div class="search-wrap">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input type="text" id="searchInput" placeholder="Buscar paciente…" oninput="onSearch()"/>
     </div>
-    <button class="btn btn-teal" onclick="openNewPatientModal()">+ Nuevo paciente</button>
+    <button class="btn btn-teal topbar-add-btn" onclick="openNewPatientModal()">+ <span class="btn-label">Nuevo paciente</span></button>
     <button onclick="doLogout()" title="Cerrar sesión" style="padding:7px 10px;border-radius:9px;border:1px solid var(--border);background:none;cursor:pointer;font-size:16px;" >🔒</button>
   </header>
   <div class="content" id="mainContent"></div>
@@ -725,6 +769,15 @@ function nav(v,pid=null){
   const key=v==='patient'?'patients':v;
   const el=document.getElementById('nav-'+key);if(el)el.classList.add('active');
   renderAll();
+  closeSidebar();
+}
+function toggleSidebar(){
+  document.querySelector('.sidebar').classList.toggle('open');
+  document.getElementById('sidebarBackdrop').classList.toggle('show');
+}
+function closeSidebar(){
+  document.querySelector('.sidebar').classList.remove('open');
+  document.getElementById('sidebarBackdrop').classList.remove('show');
 }
 function onSearch(){
   searchTerm=document.getElementById('searchInput').value.toLowerCase();
@@ -827,7 +880,7 @@ function renderPatients(){
     p.name.toLowerCase().includes(searchTerm)||p.tutor.toLowerCase().includes(searchTerm)||
     (p.breed||'').toLowerCase().includes(searchTerm)||SPECIES_ES[p.species].toLowerCase().includes(searchTerm)
   );
-  return `<div style="max-width:980px;"><div class="card"><table>
+  return `<div style="max-width:980px;"><div class="card"><div class="table-scroll"><table>
     <thead><tr><th>Paciente</th><th>Especie/Raza</th><th>Edad</th><th>Peso</th><th>Tutor</th><th>Teléfono</th><th>Vacunas</th></tr></thead>
     <tbody>
       ${filtered.length===0?`<tr><td colspan="7"><div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">Sin resultados para "${searchTerm}"</div></div></td></tr>`:
@@ -844,7 +897,7 @@ function renderPatients(){
         </tr>`;
       }).join('')}
     </tbody>
-  </table></div></div>`;
+  </table></div></div></div>`;
 }
 
 // ══════════════════════════════════════════════════════
@@ -1062,7 +1115,7 @@ function renderBillingView(){
     if(t>0) yAxis+=`<text x="${padL-5}" y="${yy+4}" text-anchor="end" font-size="9" fill="#9ba3aa" font-family="DM Sans,sans-serif">${val>=1000?(val/1000).toFixed(0)+'k':val}</text>`;
   }
 
-  const chartSVG=`<svg viewBox="0 0 ${totalW} ${chartH+padT+padB}" style="width:100%;height:${chartH+padT+padB}px;display:block;">
+  const chartSVG=`<svg viewBox="0 0 ${totalW} ${chartH+padT+padB}" style="width:100%;min-width:${totalW}px;height:${chartH+padT+padB}px;display:block;">
     ${yAxis}${bars}
     <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${padT+chartH}" stroke="#dedad3" stroke-width="1"/>
   </svg>`;
@@ -1175,7 +1228,7 @@ function renderBillingView(){
           <span style="display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:2px;background:#f5b8a0;display:inline-block;"></span>Pendiente</span>
         </div>
       </div>
-      <div style="padding:16px 20px 8px;">${chartSVG}</div>
+      <div style="padding:16px 20px 8px;overflow-x:auto;">${chartSVG}</div>
       <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border-top:1px solid var(--border);">
         <div style="padding:12px 18px;border-right:1px solid var(--border);">
           <div style="font-size:11px;color:var(--ink4);margin-bottom:3px;">FACTURADO ${curMonthName.toUpperCase()}</div>
