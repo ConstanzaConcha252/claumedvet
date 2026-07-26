@@ -330,7 +330,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.8</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.11</div>
   </div>
 </div>
 
@@ -371,7 +371,7 @@ select{cursor:pointer}
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
     <button onclick="exportBackup()" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo</button>
-    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.8</div>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.11</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -455,6 +455,34 @@ const TARIFAS = [
   ]},
 ];
 function tarifasFlat(){return TARIFAS.flatMap(c=>c.items);}
+
+// ── LISTADO DE VACUNAS (para no escribirlas a mano cada vez) ──
+const VACCINE_NAMES=['Séxtuple','Antirrábica','Puppy DP','Triple felina','Leucemia','KC intranasal','Intra-trac oral'];
+function vaccineSelectHTML(prefix,current){
+  const isKnown=VACCINE_NAMES.includes(current);
+  const isCustom=!!current&&!isKnown;
+  const opts=VACCINE_NAMES.map(n=>`<option value="${n}" ${current===n?'selected':''}>${n}</option>`).join('');
+  return `<select id="${prefix}-name-sel" onchange="toggleVaccineCustom('${prefix}')">
+      <option value="">Selecciona…</option>
+      ${opts}
+      <option value="__otra__" ${isCustom?'selected':''}>Otra (escribir)…</option>
+    </select>
+    <input id="${prefix}-name-custom" type="text" placeholder="Nombre de la vacuna" value="${isCustom?current:''}" style="margin-top:6px;${isCustom?'':'display:none;'}"/>`;
+}
+function toggleVaccineCustom(prefix){
+  const sel=document.getElementById(prefix+'-name-sel');
+  const inp=document.getElementById(prefix+'-name-custom');
+  if(!sel||!inp)return;
+  inp.style.display=sel.value==='__otra__'?'':'none';
+  if(sel.value==='__otra__')inp.focus();
+}
+function getVaccineName(prefix){
+  const sel=document.getElementById(prefix+'-name-sel');
+  const inp=document.getElementById(prefix+'-name-custom');
+  if(!sel)return '';
+  if(sel.value==='__otra__')return inp?inp.value.trim():'';
+  return sel.value;
+}
 
 
 const EMOJIS={dog:'🐶',cat:'🐱',rabbit:'🐰',bird:'🐦',other:'🐾'};
@@ -769,8 +797,8 @@ function hasValidPhone(p){
 }
 function vacReminderMsg(p,vac,days){
   const dueStr=fmtDate(vac.next);
-  const estado=days<0?`venció el ${dueStr}`:days===0?'es hoy':`está programada para el ${dueStr}`;
-  return `Hola ${p.tutor}! 🐾 Te escribimos de ClauMedVet para recordarte que *${p.name}* tiene su vacuna *${vac.name}* que ${estado}. Cualquier consulta o para agendar hora, escríbenos por acá. ¡Saludos!`;
+  const estado=days<0?`venció el ${dueStr}`:days===0?`es hoy ${dueStr}`:`el ${dueStr}`;
+  return `Hola ${p.tutor}! 🐾 Te escribimos de ClauMedVet para recordarte que a *${p.name}* le corresponde la vacuna *${vac.name}* ${estado}. Cualquier consulta o para agendar hora, escríbenos por acá. ¡Saludos!`;
 }
 function waLink(phone,text){
   const digits=(phone||'').replace(/\D/g,'');
@@ -779,6 +807,22 @@ function waLink(phone,text){
 function waButton(p,vac,days){
   if(!hasValidPhone(p))return `<span style="font-size:11px;color:var(--ink4);white-space:nowrap;" title="Agrega un teléfono válido en la ficha del paciente para poder enviar">📵 Sin tel.</span>`;
   return `<a class="btn btn-sm" href="${waLink(p.phone,vacReminderMsg(p,vac,days))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="text-decoration:none;color:#0d6e55;border-color:#9fe0cb;background:#eaf9f2;white-space:nowrap;">📱 WhatsApp</a>`;
+}
+function apptDayLabel(date){
+  const today=todayStr();
+  const tmrD=new Date();tmrD.setDate(tmrD.getDate()+1);
+  const tmr=tmrD.toISOString().split('T')[0];
+  if(date===today)return 'hoy';
+  if(date===tmr)return 'mañana';
+  return `el ${fmtDate(date)}`;
+}
+function confirmApptMsg(a){
+  const dayLabel=apptDayLabel(a.date);
+  return `Hola ${a.tutor||''}! 🐾 Te escribimos de ClauMedVet para confirmar la hora de *${a.patient}* ${dayLabel} a las ${a.time} hrs. ¿Nos confirmas que podrán asistir? ¡Gracias!`;
+}
+function waApptButton(a){
+  if(!hasValidPhone(a))return `<span style="font-size:11px;color:var(--ink4);white-space:nowrap;" title="Agrega un teléfono válido a esta cita para poder enviar">📵 Sin tel.</span>`;
+  return `<a class="btn btn-sm" href="${waLink(a.phone,confirmApptMsg(a))}" target="_blank" rel="noopener" style="text-decoration:none;color:#0d6e55;border-color:#9fe0cb;background:#eaf9f2;white-space:nowrap;">📱 Confirmar</a>`;
 }
 function getTodayApts(){return DB.appointments.filter(a=>a.date===todayStr()&&!a.done).sort((a,b)=>a.time.localeCompare(b.time));}
 function getPendingDebt(){return DB.invoices.reduce((s,i)=>s+invDebt(i),0);}
@@ -1058,6 +1102,7 @@ function renderAgendaView(){
       </div>
       <div class="appt-actions">
         <span class="status ${a.done?'s-done':'s-sched'}">${a.done?'Realizada':'Pendiente'}</span>
+        ${!a.done?waApptButton(a):''}
         ${!a.done?`<button class="btn btn-sm" onclick="markApptDone(${a.id})" style="font-size:11px;">✓ Realizada</button>`:''}
         ${(()=>{
           // Find linked invoice or most recent invoice for this patient on this date
@@ -1724,7 +1769,7 @@ function saveEditVisit(pid,hid){
 function openNewVaccineModal(pid){
   openModal(`<div class="modal modal-sm">
     <div class="modal-title">Agregar vacuna</div>
-    <div class="form-group"><label>Nombre *</label><input id="vc-name" type="text" placeholder="Antirrábica, Triple felina…"/></div>
+    <div class="form-group"><label>Nombre *</label>${vaccineSelectHTML('vc','')}</div>
     <div class="form-row">
       <div class="form-group"><label>Fecha aplicación *</label><input id="vc-date" type="date" value="${todayStr()}"/></div>
       <div class="form-group"><label>Próxima dosis</label><input id="vc-next" type="date"/></div>
@@ -1737,7 +1782,7 @@ function openNewVaccineModal(pid){
 }
 function saveVaccine(pid){
   const p=DB.patients.find(x=>x.id===pid);if(!p)return;
-  const name=document.getElementById('vc-name').value.trim();if(!name){alert('Nombre obligatorio.');return;}
+  const name=getVaccineName('vc');if(!name){alert('Nombre obligatorio.');return;}
   p.vaccinations.push({name,date:document.getElementById('vc-date').value,next:document.getElementById('vc-next').value||null});
   saveDB();closeModal();showToast('Vacuna registrada ✓');patientTab='vacunas';renderAll();
 }
@@ -1745,7 +1790,7 @@ function openEditVaccineModal(pid,idx){
   const p=DB.patients.find(x=>x.id===pid);if(!p)return;const v=p.vaccinations[idx];
   openModal(`<div class="modal modal-sm">
     <div class="modal-title">Editar vacuna</div>
-    <div class="form-group"><label>Nombre</label><input id="ev-name" type="text" value="${v.name}"/></div>
+    <div class="form-group"><label>Nombre</label>${vaccineSelectHTML('ev',v.name)}</div>
     <div class="form-row">
       <div class="form-group"><label>Aplicada</label><input id="ev-date" type="date" value="${v.date||''}"/></div>
       <div class="form-group"><label>Próxima</label><input id="ev-next" type="date" value="${v.next||''}"/></div>
@@ -1758,7 +1803,8 @@ function openEditVaccineModal(pid,idx){
 }
 function saveEditVaccine(pid,idx){
   const p=DB.patients.find(x=>x.id===pid);if(!p)return;
-  p.vaccinations[idx].name=document.getElementById('ev-name').value.trim()||p.vaccinations[idx].name;
+  const newName=getVaccineName('ev');
+  p.vaccinations[idx].name=newName||p.vaccinations[idx].name;
   p.vaccinations[idx].date=document.getElementById('ev-date').value;
   p.vaccinations[idx].next=document.getElementById('ev-next').value||null;
   saveDB();closeModal();showToast('Actualizada ✓');renderAll();
