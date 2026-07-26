@@ -334,7 +334,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.13</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.14</div>
   </div>
 </div>
 
@@ -375,7 +375,7 @@ select{cursor:pointer}
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
     <button onclick="exportBackup()" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo</button>
-    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.13</div>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.14</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -606,9 +606,13 @@ async function pullFromCloud(){
       DB.nextId=cfg.next_patient_id||(Math.max(0,...DB.patients.map(p=>p.id))+1);
       DB.nextAid=cfg.next_appt_id||(Math.max(0,...DB.appointments.map(a=>a.id))+1);
       DB.nextInvId=cfg.next_invoice_id||(Math.max(0,...DB.invoices.map(i=>i.id))+1);
-      localStorage.setItem('claudmedvet_v2',JSON.stringify(DB));
+      // saveLocalDB nunca lanza excepción: si no hay espacio suficiente, guarda una
+      // copia sin fotos y deja el estado en 'storage' (no es un problema de conexión).
+      if(saveLocalDB(DB))cloudStatus='online';
+    }else{
+      cloudStatus='online';
     }
-    cloudStatus='online';renderCloudBadge();
+    renderCloudBadge();
     return true;
   }catch(err){
     if(err&&err.isApiError){
@@ -672,7 +676,8 @@ function renderCloudBadge(){
     connecting:{icon:'🔄',text:'Conectando…',color:'rgba(255,255,255,.5)',topColor:'var(--ink4)'},
     online:{icon:'☁️',text:'Sincronizado',color:'rgba(255,255,255,.6)',topColor:'var(--green-d)'},
     offline:{icon:'📴',text:'Sin conexión (local)',color:'#f5b8a0',topColor:'var(--red)'},
-    error:{icon:'⚠️',text:'Error al sincronizar (revisa Supabase)',color:'#f5b8a0',topColor:'var(--red)'}
+    error:{icon:'⚠️',text:'Error al sincronizar (revisa Supabase)',color:'#f5b8a0',topColor:'var(--red)'},
+    storage:{icon:'🗄️',text:'Sin espacio local (revisa fotos de pacientes)',color:'#f5d48a',topColor:'var(--amber)'}
   };
   const s=map[cloudStatus]||map.connecting;
   const tooltip=cloudStatus==='error'&&lastCloudErrorDetail?`${s.text}: ${lastCloudErrorDetail}`:s.text;
@@ -692,8 +697,33 @@ function exportBackup(){
 }
 
 function loadDB(){try{const r=localStorage.getItem('claudmedvet_v2');if(r)DB=JSON.parse(r);}catch(e){}}
+function saveLocalDB(dbObj){
+  try{
+    localStorage.setItem('claudmedvet_v2',JSON.stringify(dbObj));
+    return true;
+  }catch(e){
+    if(e&&(e.name==='QuotaExceededError'||e.code===22)){
+      // Sin espacio suficiente en el navegador: probablemente por fotos de pacientes.
+      // Reintenta guardando una copia sin fotos, para no perder el resto de los datos.
+      try{
+        const light=JSON.parse(JSON.stringify(dbObj));
+        (light.patients||[]).forEach(p=>{if(p.photo)p.photo=null;});
+        localStorage.setItem('claudmedvet_v2',JSON.stringify(light));
+        console.warn('Espacio local insuficiente: se guardó sin fotos (siguen respaldadas en la nube si hay conexión).');
+        cloudStatus='storage';renderCloudBadge();
+        return true;
+      }catch(e2){
+        console.error('No se pudo guardar localmente ni siquiera sin fotos.',e2);
+        cloudStatus='storage';renderCloudBadge();
+        return false;
+      }
+    }
+    console.error('Error guardando localmente:',e);
+    return false;
+  }
+}
 function saveDB(){
-  try{localStorage.setItem('claudmedvet_v2',JSON.stringify(DB));}catch(e){}
+  saveLocalDB(DB);
   // Sync to cloud in background, non-blocking
   if(cloudSyncEnabled)syncAllToCloud();
 }
@@ -1711,12 +1741,29 @@ function openPhotoLightbox(pid){
 }
 function handlePhotoUpload(event,pid){
   const file=event.target.files[0];if(!file)return;
-  if(file.size>2*1024*1024){alert('La imagen es muy grande. Por favor usa una imagen de menos de 2MB.');return;}
+  if(file.size>10*1024*1024){alert('La imagen es muy grande. Por favor usa una imagen de menos de 10MB.');return;}
   const reader=new FileReader();
   reader.onload=function(e){
-    const p=DB.patients.find(x=>x.id===pid);if(!p)return;
-    p.photo=e.target.result; // base64 data URL
-    saveDB();showToast('Foto actualizada ✓');renderAll();
+    const img=new Image();
+    img.onload=function(){
+      // Redimensiona y comprime antes de guardar: las fotos de celular sin comprimir
+      // (varios MB cada una) llenan rápido el espacio de almacenamiento del navegador
+      // y hacen fallar el guardado local y la sincronización.
+      const MAX=480;
+      let w=img.width,h=img.height;
+      if(w>h&&w>MAX){h=Math.round(h*MAX/w);w=MAX;}
+      else if(h>=w&&h>MAX){w=Math.round(w*MAX/h);h=MAX;}
+      const canvas=document.createElement('canvas');
+      canvas.width=w;canvas.height=h;
+      canvas.getContext('2d').drawImage(img,0,0,w,h);
+      let dataUrl;
+      try{dataUrl=canvas.toDataURL('image/jpeg',0.72);}catch(err){dataUrl=e.target.result;}
+      const p=DB.patients.find(x=>x.id===pid);if(!p)return;
+      p.photo=dataUrl;
+      saveDB();pushPatient(p);showToast('Foto actualizada ✓');renderAll();
+    };
+    img.onerror=function(){alert('No se pudo procesar esta imagen. Prueba con otra.');};
+    img.src=e.target.result;
   };
   reader.readAsDataURL(file);
 }
