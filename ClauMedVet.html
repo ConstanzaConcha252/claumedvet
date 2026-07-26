@@ -19,10 +19,10 @@
   --shadow-lg:0 8px 32px rgba(0,0,0,.13);
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.5;height:100vh;overflow:hidden;display:flex}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.5;height:100vh;height:100dvh;overflow:hidden;display:flex}
 
 /* ── SIDEBAR ── */
-.sidebar{width:260px;min-width:260px;background:linear-gradient(175deg,#145f6e 0%,#1a8fa0 55%,#1e9e8a 100%);display:flex;flex-direction:column;height:100vh}
+.sidebar{width:260px;min-width:260px;background:linear-gradient(175deg,#145f6e 0%,#1a8fa0 55%,#1e9e8a 100%);display:flex;flex-direction:column;height:100vh;height:100dvh}
 .logo-wrap{padding:16px 16px 13px;border-bottom:1px solid rgba(255,255,255,.15)}
 .logo{display:flex;align-items:center;gap:10px}
 .logo-img{width:50px;height:50px;flex-shrink:0;filter:drop-shadow(0 2px 6px rgba(0,0,0,.3))}
@@ -47,9 +47,9 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
 .sidebar-bottom{padding:10px 14px;border-top:1px solid rgba(255,255,255,.15);font-size:11px;color:rgba(255,255,255,.4);display:flex;align-items:center;gap:6px}
 
 /* ── MAIN ── */
-.main{flex:1;display:flex;flex-direction:column;overflow:hidden;height:100vh}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;height:100vh;height:100dvh}
 .topbar{background:var(--surface);border-bottom:1px solid var(--border);padding:11px 22px;display:flex;align-items:center;gap:12px;flex-shrink:0}
-.topbar-title{font-family:'DM Serif Display',serif;font-size:19px;color:var(--ink);flex:1}
+.topbar-title{font-family:'DM Serif Display',serif;font-size:19px;color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .search-wrap{display:flex;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:0 10px;gap:6px;transition:border-color .15s,box-shadow .15s}
 .search-wrap:focus-within{border-color:var(--teal);box-shadow:0 0 0 3px rgba(30,143,160,.12);background:var(--surface)}
 .search-wrap svg{width:15px;height:15px;color:var(--ink4);flex-shrink:0}
@@ -270,7 +270,8 @@ select{cursor:pointer}
 .sidebar-backdrop.show{display:block}
 .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 
-@media (max-width:880px){
+@media (max-width:1024px){
+  input[type=text],input[type=number],input[type=email],input[type=tel],input[type=date],input[type=time],select,textarea,.search-wrap input,.login-field input{font-size:16px}
   .menu-toggle{display:flex}
   .sidebar{position:fixed;top:0;left:0;z-index:1600;transform:translateX(-100%);transition:transform .25s ease;box-shadow:0 0 40px rgba(0,0,0,.3)}
   .sidebar.open{transform:translateX(0)}
@@ -280,7 +281,7 @@ select{cursor:pointer}
   .search-wrap{order:5;flex:1 1 100%}
   .search-wrap input{width:100%}
   .grid-2{grid-template-columns:1fr}
-  .modal-lg{width:min(620px,92vw)}
+  .modal-lg{width:min(620px,94vw)}
 }
 
 @media (max-width:640px){
@@ -762,6 +763,23 @@ function getPatientAddresses(pid){
 //  STATE & ROUTING
 // ══════════════════════════════════════════════════════
 let view='dashboard',selectedPid=null,patientTab='historial',searchTerm='',agendaFilter='hoy',billingFilter='todos';
+const VIEW_KEY='cmv_view_state';
+function saveViewState(){
+  try{localStorage.setItem(VIEW_KEY,JSON.stringify({view,selectedPid,patientTab,agendaFilter,billingFilter}));}catch(e){}
+}
+function restoreViewState(){
+  try{
+    const r=localStorage.getItem(VIEW_KEY);
+    if(!r)return;
+    const s=JSON.parse(r);
+    if(s.view==='patient'&&!DB.patients.some(p=>p.id===s.selectedPid))return; // paciente ya no existe, quedarse en dashboard
+    view=s.view||'dashboard';selectedPid=s.selectedPid??null;
+    patientTab=s.patientTab||'historial';agendaFilter=s.agendaFilter||'hoy';billingFilter=s.billingFilter||'todos';
+    document.querySelectorAll('.nav-item').forEach(el=>el.classList.remove('active'));
+    const key=view==='patient'?'patients':view;
+    const el=document.getElementById('nav-'+key);if(el)el.classList.add('active');
+  }catch(e){}
+}
 
 function nav(v,pid=null){
   view=v;selectedPid=pid;
@@ -770,6 +788,7 @@ function nav(v,pid=null){
   const el=document.getElementById('nav-'+key);if(el)el.classList.add('active');
   renderAll();
   closeSidebar();
+  saveViewState();
 }
 function toggleSidebar(){
   document.querySelector('.sidebar').classList.toggle('open');
@@ -971,7 +990,7 @@ function renderAgendaView(){
     ${apts.length===0?`<div class="card card-p"><div class="empty"><div class="empty-icon">📅</div><div class="empty-text">Sin citas en este período</div><div class="empty-sub">Usa "+ Nueva cita" para agendar</div></div></div>`:datesHTML}
   </div>`;
 }
-function setAgendaFilter(f){agendaFilter=f;renderMain();}
+function setAgendaFilter(f){agendaFilter=f;renderMain();saveViewState();}
 
 function openApptConsultaModal(aid){
   const a=DB.appointments.find(x=>x.id===aid);if(!a)return;
@@ -1283,7 +1302,7 @@ function renderBillingView(){
     }).join('')}
   </div>`;
 }
-function setBillingFilter(f){billingFilter=f;renderMain();}
+function setBillingFilter(f){billingFilter=f;renderMain();saveViewState();}
 // Delegated listener for data-bf buttons (avoids quote-escaping issues in template literals)
 document.addEventListener('click',function(e){
   const bf=e.target.closest('[data-bf]');
@@ -1295,7 +1314,7 @@ document.addEventListener('click',function(e){
 // ══════════════════════════════════════════════════════
 //  PATIENT DETAIL
 // ══════════════════════════════════════════════════════
-function switchTab(t){patientTab=t;renderMain();}
+function switchTab(t){patientTab=t;renderMain();saveViewState();}
 function renderPatientDetail(){
   const p=DB.patients.find(x=>x.id===selectedPid);if(!p)return '';
   const history=[...(p.history||[])].reverse();
@@ -2077,10 +2096,10 @@ document.addEventListener('DOMContentLoaded', function(){
 if(checkSession()){
   // Already logged in — hide login screen and load app
   document.getElementById('loginScreen').style.display='none';
-  loadDB();renderAll();
+  loadDB();restoreViewState();renderAll();
   pullFromCloud().then(gotCloudData=>{
     if(!gotCloudData && DB.patients.length===0){initSampleData();syncAllToCloud();}
-    renderAll();
+    restoreViewState();renderAll();
   });
 }
 // If not logged in, login screen stays visible — doLogin() handles the rest
