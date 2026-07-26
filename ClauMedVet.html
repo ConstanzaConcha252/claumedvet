@@ -37,7 +37,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
 .nav-badge.show{display:inline}
 .sidebar-divider{height:1px;background:rgba(255,255,255,.15);margin:5px 8px 7px}
 .recent-label{font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.5);padding:0 18px 6px}
-.recent-list{flex:1;overflow-y:auto;padding:0 8px 10px}
+.recent-list{flex:1;overflow-y:auto;padding:0 8px 10px;min-height:0}
 .recent-item{display:flex;align-items:center;gap:9px;padding:6px 10px;border-radius:9px;cursor:pointer;transition:background .15s}
 .recent-item:hover{background:rgba(255,255,255,.12)}
 .recent-item.active{background:rgba(255,255,255,.2)}
@@ -64,7 +64,7 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--ink);font
 .btn-xs{padding:3px 8px;font-size:11px}
 .btn-danger{color:var(--red);border-color:#f5b8b8}
 .btn-danger:hover{background:var(--red-l)}
-.content{flex:1;overflow-y:auto;padding:20px}
+.content{flex:1;overflow-y:auto;padding:20px;min-height:0;-webkit-overflow-scrolling:touch}
 
 /* ── CARDS ── */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
@@ -269,6 +269,7 @@ select{cursor:pointer}
 .sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(10,15,20,.45);z-index:1550}
 .sidebar-backdrop.show{display:block}
 .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.cloud-badge-top{font-size:16px;padding:6px 8px;border-radius:8px;cursor:default;display:inline-flex;align-items:center;flex-shrink:0}
 
 @media (max-width:1024px){
   input[type=text],input[type=number],input[type=email],input[type=tel],input[type=date],input[type=time],select,textarea,.search-wrap input,.login-field input{font-size:16px}
@@ -377,6 +378,7 @@ select{cursor:pointer}
       <input type="text" id="searchInput" placeholder="Buscar paciente…" oninput="onSearch()"/>
     </div>
     <button class="btn btn-teal topbar-add-btn" onclick="openNewPatientModal()">+ <span class="btn-label">Nuevo paciente</span></button>
+    <span id="cloudStatusBadgeTop" class="cloud-badge-top" title="Conectando…">🔄</span>
     <button onclick="doLogout()" title="Cerrar sesión" style="padding:7px 10px;border-radius:9px;border:1px solid var(--border);background:none;cursor:pointer;font-size:16px;" >🔒</button>
   </header>
   <div class="content" id="mainContent"></div>
@@ -604,16 +606,16 @@ function syncAllToCloud(){
 
 function renderCloudBadge(){
   const el=document.getElementById('cloudStatusBadge');
-  if(!el)return;
+  const top=document.getElementById('cloudStatusBadgeTop');
   const map={
-    connecting:{icon:'🔄',text:'Conectando…',color:'rgba(255,255,255,.5)'},
-    online:{icon:'☁️',text:'Sincronizado',color:'rgba(255,255,255,.6)'},
-    offline:{icon:'📴',text:'Sin conexión (local)',color:'#f5b8a0'},
-    error:{icon:'⚠️',text:'Error de sync',color:'#f5b8a0'}
+    connecting:{icon:'🔄',text:'Conectando…',color:'rgba(255,255,255,.5)',topColor:'var(--ink4)'},
+    online:{icon:'☁️',text:'Sincronizado',color:'rgba(255,255,255,.6)',topColor:'var(--green-d)'},
+    offline:{icon:'📴',text:'Sin conexión (local)',color:'#f5b8a0',topColor:'var(--red)'},
+    error:{icon:'⚠️',text:'Error de sync',color:'#f5b8a0',topColor:'var(--red)'}
   };
   const s=map[cloudStatus]||map.connecting;
-  el.innerHTML=`${s.icon} ${s.text}`;
-  el.style.color=s.color;
+  if(el){el.innerHTML=`${s.icon} ${s.text}`;el.style.color=s.color;}
+  if(top){top.textContent=s.icon;top.title=s.text;top.style.color=s.topColor;}
 }
 
 function exportBackup(){
@@ -729,8 +731,32 @@ function vacST(d){if(d===null)return 'Sin fecha';if(d<0)return 'Vencida';if(d===
 function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
 function validEmail(e){return !e||/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);}
 function checkEmail(id){const v=document.getElementById(id)?.value.trim();if(v&&!validEmail(v)){alert('El email ingresado no tiene un formato válido.\nEjemplo: correo@dominio.com');return false;}return true;}
-function validPhone(p){return !p||/^\+?[\d\s\-().]{7,15}$/.test(p.trim());}
-function checkPhone(id){const v=document.getElementById(id)?.value.trim();if(v&&!validPhone(v)){alert('El teléfono ingresado no tiene un formato válido.\nEjemplo: +56 9 1234 5678');return false;}return true;}
+const PHONE_PREFIX='+569';
+function validPhone(p){
+  if(!p)return true;
+  const clean=p.replace(/\s+/g,'');
+  if(clean===PHONE_PREFIX)return true; // solo el prefijo = campo sin completar, se trata como vacío
+  return new RegExp('^\\'+PHONE_PREFIX+'\\d{8}$').test(clean);
+}
+function checkPhone(id){const v=document.getElementById(id)?.value.trim();if(v&&!validPhone(v)){alert('El teléfono debe tener 8 dígitos después de +569.\nEjemplo: +56912345678');return false;}return true;}
+function sanitizePhoneInput(el){
+  let v=el.value;
+  if(!v.startsWith(PHONE_PREFIX)){
+    let digits=v.replace(/\D/g,'');
+    if(digits.startsWith('569'))digits=digits.slice(3);
+    else if(digits.startsWith('56'))digits=digits.slice(2);
+    else if(digits.startsWith('9'))digits=digits.slice(1);
+    v=PHONE_PREFIX+digits;
+  }
+  const rest=v.slice(PHONE_PREFIX.length).replace(/\D/g,'').slice(0,8);
+  el.value=PHONE_PREFIX+rest;
+}
+function guardPhoneKeydown(e){
+  const el=e.target;
+  if(e.key==='Backspace'||e.key==='Delete'){
+    if(el.selectionStart<=PHONE_PREFIX.length&&el.selectionEnd<=PHONE_PREFIX.length){e.preventDefault();}
+  }
+}
 function showPhoneHint(inputId,hintId){
   const inp=document.getElementById(inputId);const hint=document.getElementById(hintId);if(!inp||!hint)return;
   const v=inp.value.trim();
@@ -1022,7 +1048,7 @@ function openApptCobroModal(aid){
       <div class="form-group"><label>Tutor</label><input id="inv-tutor" type="text" value="${a.tutor||pp?.tutor||''}"/></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Teléfono</label><input id="inv-phone" type="tel" value="${a.phone||pp?.phone||'+569'}" placeholder="+56 9 1234 5678"/></div>
+      <div class="form-group"><label>Teléfono</label><input id="inv-phone" type="tel" value="${a.phone||pp?.phone||'+569'}" placeholder="+56 9 1234 5678" oninput="sanitizePhoneInput(this)" onkeydown="guardPhoneKeydown(event)"/></div>
       <div class="form-group"><label>Fecha</label><input id="inv-date" type="date" value="${a.date}"/></div>
     </div>
     <div class="hr"></div>
@@ -1438,7 +1464,7 @@ function openNewPatientModal(){
       <div class="form-group"><label>Tutor *</label><input id="f-tutor" type="text" placeholder="Nombre completo"/></div>
       <div class="form-group">
         <label>Teléfono</label>
-        <input id="f-phone" type="tel" placeholder="+56 9 1234 5678" value="+569" oninput="showPhoneHint('f-phone','f-phone-hint')"/>
+        <input id="f-phone" type="tel" placeholder="+56 9 1234 5678" value="+569" oninput="sanitizePhoneInput(this);showPhoneHint('f-phone','f-phone-hint')" onkeydown="guardPhoneKeydown(event)"/>
         <div id="f-phone-hint" style="font-size:11px;margin-top:3px;display:none;"></div>
       </div>
     </div>
@@ -1491,7 +1517,7 @@ function openEditPatientModal(pid){
     <div class="hr"></div>
     <div class="form-row">
       <div class="form-group"><label>Tutor *</label><input id="f-tutor" type="text" value="${p.tutor}"/></div>
-      <div class="form-group"><label>Teléfono</label><input id="f-phone" type="tel" value="${p.phone||''}"/></div>
+      <div class="form-group"><label>Teléfono</label><input id="f-phone" type="tel" value="${p.phone||'+569'}" oninput="sanitizePhoneInput(this)" onkeydown="guardPhoneKeydown(event)"/></div>
     </div>
     <div class="form-group"><label>Email</label><input id="f-email" type="email" value="${p.email||''}"/></div>
     <div class="modal-footer">
@@ -1624,7 +1650,7 @@ function openNewApptModal(prefillPid){
       <div id="a-ac" class="autocomplete-list"></div>
     </div>
     <div class="form-group"><label>Tutor</label><input id="a-tutor" type="text" placeholder="Se completa automáticamente" value="${pp?pp.tutor:''}"/></div>
-    <div class="form-group"><label>Teléfono</label><input id="a-phone" type="tel" placeholder="+56 9 …" value="${pp&&pp.phone?pp.phone:'+569'}"/></div>
+    <div class="form-group"><label>Teléfono</label><input id="a-phone" type="tel" placeholder="+56 9 …" value="${pp&&pp.phone?pp.phone:'+569'}" oninput="sanitizePhoneInput(this)" onkeydown="guardPhoneKeydown(event)"/></div>
     <div class="form-group">
       <label>Dirección de la visita *</label>
       <input id="a-address" type="text" placeholder="Av. Ejemplo 1234, Comuna" oninput="addressAC()" onfocus="addressAC()" onblur="setTimeout(closeAddrAC,200)" autocomplete="off" value=""/>
@@ -1736,7 +1762,7 @@ function openEditApptModal(aid){
       <div class="form-group"><label>Paciente *</label><input id="a-patient" type="text" value="${a.patient}"/></div>
       <div class="form-group"><label>Tutor</label><input id="a-tutor" type="text" value="${a.tutor||''}"/></div>
     </div>
-    <div class="form-group"><label>Teléfono</label><input id="a-phone" type="tel" value="${a.phone||''}" placeholder="+56 9 1234 5678"/></div>
+    <div class="form-group"><label>Teléfono</label><input id="a-phone" type="tel" value="${a.phone||'+569'}" placeholder="+56 9 1234 5678" oninput="sanitizePhoneInput(this)" onkeydown="guardPhoneKeydown(event)"/></div>
     <div class="form-group">
       <label>Dirección *</label>
       ${addrs.length>1?`<select id="a-address" onchange="if(this.value==='_custom')this.outerHTML='<input id=\\'a-address\\' type=\\'text\\' value=\\'\\'/>'" style="margin-bottom:6px;">
@@ -1786,7 +1812,7 @@ function openPostApptBillingModal(aid){
       <div class="form-group"><label>Tutor</label><input id="inv-tutor" type="text" value="${a.tutor||pp?.tutor||''}"/></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Teléfono</label><input id="inv-phone" type="tel" value="${a.phone||pp?.phone||'+569'}" placeholder="+56 9 1234 5678"/></div>
+      <div class="form-group"><label>Teléfono</label><input id="inv-phone" type="tel" value="${a.phone||pp?.phone||'+569'}" placeholder="+56 9 1234 5678" oninput="sanitizePhoneInput(this)" onkeydown="guardPhoneKeydown(event)"/></div>
       <div class="form-group"><label>Fecha</label><input id="inv-date" type="date" value="${a.date}"/></div>
     </div>
     <div class="hr"></div>
@@ -1853,7 +1879,7 @@ function openNewInvoiceModal(prefillPid){
     </div>
     <div class="form-row">
       <div class="form-group"><label>Tutor</label><input id="inv-tutor" type="text" value="${pp?pp.tutor:''}"/></div>
-      <div class="form-group"><label>Teléfono</label><input id="inv-phone" type="tel" value="${pp&&pp.phone?pp.phone:'+569'}" placeholder="+56 9 1234 5678"/></div>
+      <div class="form-group"><label>Teléfono</label><input id="inv-phone" type="tel" value="${pp&&pp.phone?pp.phone:'+569'}" placeholder="+56 9 1234 5678" oninput="sanitizePhoneInput(this)" onkeydown="guardPhoneKeydown(event)"/></div>
     </div>
     <div class="form-group"><label>Fecha *</label><input id="inv-date" type="date" value="${todayStr()}" style="width:180px;"/></div>
     <div class="hr"></div>
@@ -1969,7 +1995,7 @@ function openEditInvoiceModal(invId){
       <div class="form-group"><label>Tutor</label><input id="inv-tutor" type="text" value="${inv.tutor||''}"/></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Teléfono</label><input id="inv-phone" type="tel" value="${inv.phone||''}" placeholder="+56 9 1234 5678"/></div>
+      <div class="form-group"><label>Teléfono</label><input id="inv-phone" type="tel" value="${inv.phone||'+569'}" placeholder="+56 9 1234 5678" oninput="sanitizePhoneInput(this)" onkeydown="guardPhoneKeydown(event)"/></div>
       <div class="form-group"><label>Fecha</label><input id="inv-date" type="date" value="${inv.date}"/></div>
     </div>
     <div class="hr"></div>
