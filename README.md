@@ -28,9 +28,13 @@ No hay envío 100% automático — por ahora eso requeriría contratar un servic
 
 Si un paciente o una cita no tiene un teléfono válido guardado, en vez del botón aparece "📵 Sin tel." como aviso.
 
-## Sobre los datos
+## Sobre los datos y el uso sin internet
 
 La app guarda la información localmente en el dispositivo y la sincroniza con un servicio externo de base de datos para tener respaldo entre equipos. Los detalles de configuración de esa conexión no se incluyen en este documento.
+
+Como se accede a la app a través de un link (no abriendo un archivo guardado en el dispositivo), el navegador necesita internet para *descargar la página* la primera vez. Para que después pueda seguir funcionando sin conexión, la app ahora se instala como un pequeño "service worker": la primera vez que se abre con internet, el navegador guarda una copia de la aplicación; las veces siguientes, aunque no haya conexión, esa copia guardada permite abrirla y seguir viendo/registrando datos con normalidad. Apenas vuelve la conexión, todo lo hecho sin internet se sincroniza solo.
+
+Para que esto funcione, junto al archivo principal deben estar publicados en el mismo lugar (misma carpeta del sitio) estos archivos adicionales: `manifest.json`, `service-worker.js`, `icon-192.png` e `icon-512.png`. Además, el sitio debe servirse por HTTPS (la gran mayoría de los servicios de hosting ya lo hacen por defecto).
 
 Para pacientes se guarda su fecha de nacimiento y la edad se calcula sola (años y meses); los pacientes cargados antes de esta función siguen mostrando una edad aproximada hasta que se les agregue la fecha real.
 
