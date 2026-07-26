@@ -330,7 +330,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.5</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.7</div>
   </div>
 </div>
 
@@ -371,7 +371,7 @@ select{cursor:pointer}
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
     <button onclick="exportBackup()" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo</button>
-    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.5</div>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.7</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -496,7 +496,7 @@ async function sbFetch(path,opts={}){
 
 function patientToRow(p){
   return {
-    id:p.id,name:p.name,species:p.species,breed:p.breed||null,age:p.age||null,
+    id:p.id,name:p.name,species:p.species,breed:p.breed||null,age:p.age||null,birthdate:p.birthdate||null,
     weight:p.weight||null,tutor:p.tutor,phone:p.phone||null,email:p.email||null,
     addresses:p.addresses||[],color:p.color||null,
     vaccinations:p.vaccinations||[],history:p.history||[],
@@ -518,7 +518,11 @@ function invoiceToRow(i){
 }
 function rowToPatient(r){
   return {
-    id:r.id,name:r.name,species:r.species,breed:r.breed||'',age:r.age||'0',
+    id:r.id,name:r.name,species:r.species,breed:r.breed||'',
+    // birthdate viene de su propia columna; si por alguna razón no existe pero "age" quedó con
+    // una fecha (versión de transición), la rescatamos igual.
+    birthdate:r.birthdate||(isBirthdate(r.age)?r.age:null),
+    age:isBirthdate(r.age)?null:(r.age||'0'),
     weight:r.weight||'0',tutor:r.tutor,phone:r.phone||'',email:r.email||'',
     addresses:r.addresses||[],color:r.color||PAL[0],
     vaccinations:r.vaccinations||[],history:r.history||[],
@@ -714,6 +718,37 @@ function initSampleData(){
 //  HELPERS
 // ══════════════════════════════════════════════════════
 function daysUntil(ds){if(!ds)return null;const t=new Date();t.setHours(0,0,0,0);return Math.round((new Date(ds+'T12:00:00')-t)/86400000);}
+function isBirthdate(v){return typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v);}
+function calcAgeYM(birthdate){
+  const b=new Date(birthdate+'T12:00:00');
+  const t=new Date();t.setHours(12,0,0,0);
+  if(b>t)return {years:0,months:0};
+  let years=t.getFullYear()-b.getFullYear();
+  let months=t.getMonth()-b.getMonth();
+  if(t.getDate()<b.getDate())months--;
+  if(months<0){years--;months+=12;}
+  return {years,months};
+}
+function ageLabel(p){
+  if(isBirthdate(p.birthdate)){
+    const a=calcAgeYM(p.birthdate);
+    if(a.years===0&&a.months===0)return 'Recién nacido';
+    if(a.years===0)return `${a.months} mes${a.months!==1?'es':''}`;
+    if(a.months===0)return `${a.years} año${a.years!==1?'s':''}`;
+    return `${a.years} año${a.years!==1?'s':''} ${a.months} mes${a.months!==1?'es':''}`;
+  }
+  if(p.age)return `${p.age} año${p.age!=1?'s':''} (aprox.)`;
+  return 'Edad desconocida';
+}
+function ageShort(p){
+  if(isBirthdate(p.birthdate)){
+    const a=calcAgeYM(p.birthdate);
+    if(a.years===0)return `${a.months}m`;
+    return a.months>0?`${a.years}a ${a.months}m`:`${a.years}a`;
+  }
+  if(p.age)return `${p.age}a`;
+  return '—';
+}
 function fmtDate(ds){if(!ds)return '—';return new Date(ds+'T12:00:00').toLocaleDateString('es-CL',{day:'2-digit',month:'short',year:'numeric'});}
 function fmtDateLong(ds){if(!ds)return '—';return new Date(ds+'T12:00:00').toLocaleDateString('es-CL',{weekday:'long',day:'numeric',month:'long'});}
 function todayStr(){return new Date().toISOString().split('T')[0];}
@@ -963,7 +998,7 @@ function renderPatients(){
         return `<tr onclick="nav('patient',${p.id})">
           <td><div style="display:flex;align-items:center;gap:9px;"><div style="width:30px;height:30px;border-radius:50%;background:${p.color}22;display:flex;align-items:center;justify-content:center;font-size:14px;overflow:hidden;flex-shrink:0;">${p.photo?`<img src="${p.photo}" style="width:100%;height:100%;object-fit:cover;" alt="${p.name}"/>`:`${EMOJIS[p.species]}`}</div><b>${p.name}</b></div></td>
           <td><span class="tag ${TAG_CLASS[p.species]}">${SPECIES_ES[p.species]}</span> <span style="color:var(--ink4);font-size:11px;">${p.breed||''}</span></td>
-          <td>${p.age}a</td><td>${p.weight}kg</td><td>${p.tutor}</td>
+          <td>${ageShort(p)}</td><td>${p.weight}kg</td><td>${p.tutor}</td>
           <td style="color:var(--ink3)">${p.phone||'—'}</td>
           <td><span class="status ${sc}">${st}</span></td>
         </tr>`;
@@ -1460,7 +1495,7 @@ function renderPatientDetail(){
       <input type="file" id="photoInput_${p.id}" accept="image/*" style="display:none;" onchange="handlePhotoUpload(event,${p.id})"/>
         <div style="flex:1;">
           <div class="hero-name">${p.name}</div>
-          <div class="hero-meta">${SPECIES_ES[p.species]} · ${p.breed||'Sin raza'} · ${p.age} año${p.age!=1?'s':''}</div>
+          <div class="hero-meta">${SPECIES_ES[p.species]} · ${p.breed||'Sin raza'} · ${ageLabel(p)}</div>
           <div class="hero-meta">Tutor: <b>${p.tutor}</b> · ${p.phone||'Sin teléfono'}</div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
@@ -1471,7 +1506,7 @@ function renderPatientDetail(){
       </div>
       <div class="info-chips">
         <div class="chip"><div class="chip-label">Peso</div><div class="chip-value">${p.weight} kg</div></div>
-        <div class="chip"><div class="chip-label">Edad</div><div class="chip-value">${p.age} años</div></div>
+        <div class="chip"><div class="chip-label">Edad</div><div class="chip-value">${ageLabel(p)}</div></div>
         <div class="chip"><div class="chip-label">Teléfono</div><div class="chip-value">${p.phone||'—'}</div></div>
         <div class="chip"><div class="chip-label">Email</div><div class="chip-value">${p.email||'—'}</div></div>
         <div class="chip"><div class="chip-label">Consultas</div><div class="chip-value">${p.history.length}</div></div>
@@ -1510,7 +1545,7 @@ function openNewPatientModal(){
     </div>
     <div class="form-row">
       <div class="form-group"><label>Raza</label><input id="f-breed" type="text" placeholder="Ej: Labrador"/></div>
-      <div class="form-group"><label>Edad (años)</label><input id="f-age" type="number" min="0" step="0.5" placeholder="3"/></div>
+      <div class="form-group"><label>Fecha de nacimiento</label><input id="f-birthdate" type="date" max="${todayStr()}"/></div>
     </div>
     <div class="form-group"><label>Peso (kg)</label><input id="f-weight" type="number" step="0.1" placeholder="12.5"/></div>
     <div class="hr"></div>
@@ -1544,7 +1579,7 @@ function saveNewPatient(){
   const addr=document.getElementById('f-addr').value.trim();
   const p={id:DB.nextId++,name,species:document.getElementById('f-species').value,
     breed:document.getElementById('f-breed').value.trim()||'Sin especificar',
-    age:document.getElementById('f-age').value||'0',weight:document.getElementById('f-weight').value||'0',
+    birthdate:document.getElementById('f-birthdate').value||null,weight:document.getElementById('f-weight').value||'0',
     tutor,phone:document.getElementById('f-phone').value.trim(),email:document.getElementById('f-email').value.trim(),
     addresses:addr?[addr]:[],color:PAL[DB.patients.length%PAL.length],vaccinations:[],history:[]};
   DB.patients.push(p);saveDB();closeModal();showToast('Paciente registrado ✓');nav('patient',p.id);
@@ -1565,7 +1600,9 @@ function openEditPatientModal(pid){
     </div>
     <div class="form-row">
       <div class="form-group"><label>Raza</label><input id="f-breed" type="text" value="${p.breed||''}"/></div>
-      <div class="form-group"><label>Edad</label><input id="f-age" type="number" step="0.5" value="${p.age}"/></div>
+      <div class="form-group"><label>Fecha de nacimiento</label><input id="f-birthdate" type="date" max="${todayStr()}" value="${p.birthdate||''}"/>
+        ${!p.birthdate&&p.age?`<div style="font-size:11px;color:var(--ink4);margin-top:3px;">Edad registrada antes: ${p.age} años (aprox). Ingresa la fecha de nacimiento para un cálculo exacto.</div>`:''}
+      </div>
     </div>
     <div class="form-group"><label>Peso (kg)</label><input id="f-weight" type="number" step="0.1" value="${p.weight}"/></div>
     <div class="hr"></div>
@@ -1588,7 +1625,7 @@ function saveEditPatient(pid){
   p.name=document.getElementById('f-name').value.trim()||p.name;
   p.species=document.getElementById('f-species').value;
   p.breed=document.getElementById('f-breed').value.trim()||p.breed;
-  p.age=document.getElementById('f-age').value||p.age;p.weight=document.getElementById('f-weight').value||p.weight;
+  p.birthdate=document.getElementById('f-birthdate').value||p.birthdate||null;p.weight=document.getElementById('f-weight').value||p.weight;
   p.tutor=document.getElementById('f-tutor').value.trim()||p.tutor;
   p.phone=document.getElementById('f-phone').value.trim();p.email=document.getElementById('f-email').value.trim();
   saveDB();closeModal();showToast('Actualizado ✓');renderAll();
