@@ -330,7 +330,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.4</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.5</div>
   </div>
 </div>
 
@@ -371,7 +371,7 @@ select{cursor:pointer}
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
     <button onclick="exportBackup()" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo</button>
-    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.4</div>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.5</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -728,6 +728,23 @@ function getAlerts(){
   DB.patients.forEach(p=>p.vaccinations.forEach(v=>{if(v.next){const d=daysUntil(v.next);if(d!==null&&d<=30)out.push({patient:p,vac:v,days:d});}}));
   return out.sort((a,b)=>a.days-b.days);
 }
+function hasValidPhone(p){
+  const ph=(p&&p.phone||'').replace(/\s+/g,'');
+  return /^\+569\d{8}$/.test(ph);
+}
+function vacReminderMsg(p,vac,days){
+  const dueStr=fmtDate(vac.next);
+  const estado=days<0?`venció el ${dueStr}`:days===0?'es hoy':`está programada para el ${dueStr}`;
+  return `Hola ${p.tutor}! 🐾 Te escribimos de ClauMedVet para recordarte que *${p.name}* tiene su vacuna *${vac.name}* que ${estado}. Cualquier consulta o para agendar hora, escríbenos por acá. ¡Saludos!`;
+}
+function waLink(phone,text){
+  const digits=(phone||'').replace(/\D/g,'');
+  return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
+}
+function waButton(p,vac,days){
+  if(!hasValidPhone(p))return `<span style="font-size:11px;color:var(--ink4);white-space:nowrap;" title="Agrega un teléfono válido en la ficha del paciente para poder enviar">📵 Sin tel.</span>`;
+  return `<a class="btn btn-sm" href="${waLink(p.phone,vacReminderMsg(p,vac,days))}" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="text-decoration:none;color:#0d6e55;border-color:#9fe0cb;background:#eaf9f2;white-space:nowrap;">📱 WhatsApp</a>`;
+}
 function getTodayApts(){return DB.appointments.filter(a=>a.date===todayStr()&&!a.done).sort((a,b)=>a.time.localeCompare(b.time));}
 function getPendingDebt(){return DB.invoices.reduce((s,i)=>s+invDebt(i),0);}
 function getUnpaidInvoices(){return DB.invoices.filter(i=>invDebt(i)>0).length;}
@@ -966,7 +983,10 @@ function renderAlertsView(){
       <div class="ar-dot ${dotClass(a.days)}"></div>
       <div class="ar-body"><div class="ar-name">${EMOJIS[a.patient.species]} ${a.patient.name} — ${a.vac.name}</div>
       <div class="ar-meta">Tutor: ${a.patient.tutor} · Tel: ${a.patient.phone||'—'} · Próxima: ${fmtDate(a.vac.next)}</div></div>
-      <div class="ar-days ${daysCC(a.days)}">${daysText(a.days)}</div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+        <div class="ar-days ${daysCC(a.days)}">${daysText(a.days)}</div>
+        ${waButton(a.patient,a.vac,a.days)}
+      </div>
     </div>`).join('')}</div>`;
   return `<div style="max-width:720px;">
     ${alerts.length===0?`<div class="card card-p"><div class="empty"><div class="empty-icon">🎉</div><div class="empty-text">¡Todo al día! Sin vacunas por vencer.</div></div></div>`:
@@ -1401,6 +1421,7 @@ function renderPatientDetail(){
         <div style="flex:1;"><div style="font-size:14px;font-weight:600;">${v.name}</div>
         <div style="font-size:12px;color:var(--ink4);">Aplicada: ${fmtDate(v.date)} · Próxima: ${fmtDate(v.next)}</div></div>
         ${v.next?`<span class="status ${vacSC(d)}">${vacST(d)}</span>`:''}
+        ${v.next&&d!==null&&d<=30?waButton(p,v,d):''}
         <button class="btn btn-sm" onclick="openEditVaccineModal(${p.id},${i})" style="font-size:11px;">Editar</button>
         <button class="btn btn-xs btn-danger" onclick="deleteVaccine(${p.id},${i})">✕</button>
       </div>`;
