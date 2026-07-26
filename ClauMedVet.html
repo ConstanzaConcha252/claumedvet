@@ -334,7 +334,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.12</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.13</div>
   </div>
 </div>
 
@@ -375,7 +375,7 @@ select{cursor:pointer}
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
     <button onclick="exportBackup()" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo</button>
-    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.12</div>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.13</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -512,18 +512,26 @@ let cloudStatus='connecting'; // connecting | online | offline | error
 async function sbFetch(path,opts={}){
   const url=`${SUPABASE_URL}/rest/v1/${path}`;
   const headers={...SB_HEADERS,...(opts.headers||{})};
+  let res;
   try{
-    const res=await fetch(url,{...opts,headers});
-    if(!res.ok){
-      const txt=await res.text().catch(()=>'');
-      console.error(`Supabase ${opts.method||'GET'} ${path} → ${res.status}:`,txt);
-      throw new Error(`${res.status} ${txt}`);
-    }
-    return res;
+    res=await fetch(url,{...opts,headers});
   }catch(err){
-    console.warn('Supabase request failed:',path,err);
+    // Fallo real de red: sin internet, DNS, o bloqueado (ej. por CORS). El navegador
+    // nunca llegó a recibir respuesta del servidor.
+    console.warn('Supabase: fallo de red',path,err);
     throw err;
   }
+  if(!res.ok){
+    const txt=await res.text().catch(()=>'');
+    console.error(`Supabase ${opts.method||'GET'} ${path} → ${res.status}:`,txt);
+    // Sí hubo respuesta del servidor, pero fue un error (proyecto pausado, permisos,
+    // credenciales, columna inexistente, etc.) — esto NO es un problema de conexión.
+    const apiErr=new Error(`${res.status} ${txt}`);
+    apiErr.isApiError=true;
+    apiErr.status=res.status;
+    throw apiErr;
+  }
+  return res;
 }
 
 function patientToRow(p){
@@ -603,8 +611,14 @@ async function pullFromCloud(){
     cloudStatus='online';renderCloudBadge();
     return true;
   }catch(err){
-    console.warn('No se pudo conectar a Supabase, usando datos locales.',err);
-    cloudStatus='offline';renderCloudBadge();
+    if(err&&err.isApiError){
+      console.error('Supabase respondió con un error (no es problema de conexión):',err);
+      cloudStatus='error';lastCloudErrorDetail=String(err.status||'')+' '+String(err.message||'');
+    }else{
+      console.warn('No se pudo conectar a Supabase, usando datos locales.',err);
+      cloudStatus='offline';
+    }
+    renderCloudBadge();
     return false;
   }
 }
@@ -614,19 +628,19 @@ function pushPatient(p){
   if(!cloudSyncEnabled)return;
   sbFetch('patients?on_conflict=id',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(patientToRow(p))})
     .then(()=>{cloudStatus='online';renderCloudBadge();})
-    .catch((err)=>{console.error('pushPatient failed',err);cloudStatus='offline';renderCloudBadge();});
+    .catch((err)=>{console.error('pushPatient failed',err);if(err&&err.isApiError){cloudStatus='error';lastCloudErrorDetail=String(err.status||'')+' '+String(err.message||'');}else{cloudStatus='offline';}renderCloudBadge();});
 }
 function pushAppt(a){
   if(!cloudSyncEnabled)return;
   sbFetch('appointments?on_conflict=id',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(apptToRow(a))})
     .then(()=>{cloudStatus='online';renderCloudBadge();})
-    .catch((err)=>{console.error('pushAppt failed',err);cloudStatus='offline';renderCloudBadge();});
+    .catch((err)=>{console.error('pushAppt failed',err);if(err&&err.isApiError){cloudStatus='error';lastCloudErrorDetail=String(err.status||'')+' '+String(err.message||'');}else{cloudStatus='offline';}renderCloudBadge();});
 }
 function pushInvoice(i){
   if(!cloudSyncEnabled)return;
   sbFetch('invoices?on_conflict=id',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(invoiceToRow(i))})
     .then(()=>{cloudStatus='online';renderCloudBadge();})
-    .catch((err)=>{console.error('pushInvoice failed',err);cloudStatus='offline';renderCloudBadge();});
+    .catch((err)=>{console.error('pushInvoice failed',err);if(err&&err.isApiError){cloudStatus='error';lastCloudErrorDetail=String(err.status||'')+' '+String(err.message||'');}else{cloudStatus='offline';}renderCloudBadge();});
 }
 function pushDeletePatient(id){if(cloudSyncEnabled)sbFetch(`patients?id=eq.${id}`,{method:'DELETE'}).catch((err)=>console.error('delete patient failed',err));}
 function pushDeleteAppt(id){if(cloudSyncEnabled)sbFetch(`appointments?id=eq.${id}`,{method:'DELETE'}).catch((err)=>console.error('delete appt failed',err));}
@@ -650,6 +664,7 @@ function syncAllToCloud(){
   pushConfig();
 }
 
+let lastCloudErrorDetail='';
 function renderCloudBadge(){
   const el=document.getElementById('cloudStatusBadge');
   const top=document.getElementById('cloudStatusBadgeTop');
@@ -657,11 +672,12 @@ function renderCloudBadge(){
     connecting:{icon:'🔄',text:'Conectando…',color:'rgba(255,255,255,.5)',topColor:'var(--ink4)'},
     online:{icon:'☁️',text:'Sincronizado',color:'rgba(255,255,255,.6)',topColor:'var(--green-d)'},
     offline:{icon:'📴',text:'Sin conexión (local)',color:'#f5b8a0',topColor:'var(--red)'},
-    error:{icon:'⚠️',text:'Error de sync',color:'#f5b8a0',topColor:'var(--red)'}
+    error:{icon:'⚠️',text:'Error al sincronizar (revisa Supabase)',color:'#f5b8a0',topColor:'var(--red)'}
   };
   const s=map[cloudStatus]||map.connecting;
-  if(el){el.innerHTML=`${s.icon} ${s.text}`;el.style.color=s.color;}
-  if(top){top.textContent=s.icon;top.title=s.text;top.style.color=s.topColor;}
+  const tooltip=cloudStatus==='error'&&lastCloudErrorDetail?`${s.text}: ${lastCloudErrorDetail}`:s.text;
+  if(el){el.innerHTML=`${s.icon} ${s.text}`;el.style.color=s.color;el.title=tooltip;}
+  if(top){top.textContent=s.icon;top.title=tooltip;top.style.color=s.topColor;}
 }
 
 function exportBackup(){
