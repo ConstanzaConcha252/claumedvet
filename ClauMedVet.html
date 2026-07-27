@@ -203,6 +203,13 @@ tbody tr:hover td{background:var(--bg)}
 .add-item-btn{display:flex;align-items:center;gap:6px;padding:8px 12px;border:1px dashed var(--border);border-radius:9px;background:none;cursor:pointer;font-size:13px;color:var(--ink4);width:100%;justify-content:center;transition:all .15s;margin-bottom:12px}
 .add-item-btn:hover{background:var(--bg);color:var(--ink)}
 .pay-row{display:flex;gap:8px;align-items:center}
+.pay-status-group{display:flex;gap:8px;flex-wrap:wrap;}
+.pay-status-btn{flex:1;min-width:100px;padding:10px 12px;border-radius:9px;border:1px solid var(--border);background:var(--surface);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:var(--ink3);cursor:pointer;transition:all .15s;text-align:center;}
+.pay-status-btn:hover{background:var(--bg);}
+.pay-status-btn.active{font-weight:600;}
+.pay-status-btn[data-pay="full"].active{border-color:#9fe0cb;background:var(--green-l);color:var(--green-d);}
+.pay-status-btn[data-pay="none"].active{border-color:#f5b8a0;background:var(--red-l);color:#8a2020;}
+.pay-status-btn[data-pay="partial"].active{border-color:#f5d48a;background:var(--amber-l);color:#7a4d08;}
 
 /* ── MODAL ── */
 .overlay{position:fixed;inset:0;background:rgba(15,20,25,.45);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:1000;animation:fadeIn .15s ease}
@@ -334,7 +341,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.15</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.17</div>
   </div>
 </div>
 
@@ -375,7 +382,7 @@ select{cursor:pointer}
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
     <button onclick="exportBackup()" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo</button>
-    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.15</div>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.17</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -874,6 +881,13 @@ function waApptButton(a){
   if(!hasValidPhone(a))return `<span style="font-size:11px;color:var(--ink4);white-space:nowrap;" title="Agrega un teléfono válido a esta cita para poder enviar">📵 Sin tel.</span>`;
   return `<a class="btn btn-sm" href="${waLink(a.phone,confirmApptMsg(a))}" target="_blank" rel="noopener" style="text-decoration:none;color:#0d6e55;border-color:#9fe0cb;background:#eaf9f2;white-space:nowrap;">📱 Confirmar</a>`;
 }
+function debtReminderMsg(inv){
+  return `Hola ${inv.tutor||''}! Espero que se encuentre muy bien. Aún no me llega el depósito de la última visita, para que lo revise porfa 🙏🏼`;
+}
+function waDebtButton(inv){
+  if(!hasValidPhone(inv))return `<span style="font-size:11px;color:var(--ink4);white-space:nowrap;" title="Agrega un teléfono válido para poder enviar">📵 Sin tel.</span>`;
+  return `<a class="btn btn-sm" href="${waLink(inv.phone,debtReminderMsg(inv))}" target="_blank" rel="noopener" style="text-decoration:none;color:#0d6e55;border-color:#9fe0cb;background:#eaf9f2;white-space:nowrap;">📱 Recordar pago</a>`;
+}
 function getTodayApts(){return DB.appointments.filter(a=>a.date===todayStr()&&!a.done).sort((a,b)=>a.time.localeCompare(b.time));}
 function getPendingDebt(){return DB.invoices.reduce((s,i)=>s+invDebt(i),0);}
 function getUnpaidInvoices(){return DB.invoices.filter(i=>invDebt(i)>0).length;}
@@ -1242,9 +1256,7 @@ function openApptCobroModal(aid){
     <div id="inv-items-wrap"></div>
     <button class="add-item-btn" onclick="addInvItem()">+ Agregar ítem</button>
     <div class="hr"></div>
-    <div class="form-row">
-      <div class="form-group"><label>Monto pagado ($)</label><input id="inv-paid" type="number" min="0" step="100" placeholder="0"/></div>
-    </div>
+    <div class="form-group"><label>Estado del pago</label>${paymentStatusHTML()}</div>
     <div class="form-group"><label>Notas</label><textarea id="inv-notes" style="min-height:50px;" placeholder="Efectivo, transferencia, observaciones…"></textarea></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal()">Cancelar</button>
@@ -1252,7 +1264,7 @@ function openApptCobroModal(aid){
     </div>
   </div>`);
   setTimeout(()=>{const inp=document.getElementById('inv-patient');if(inp&&pid)inp._pid=pid;},50);
-  renderInvItems();
+  renderInvItems();setPayStatus('none');
 }
 
 // ══════════════════════════════════════════════════════
@@ -1504,7 +1516,7 @@ function renderBillingView(){
           <div style="text-align:right;">
             <div class="bill-total-label">TOTAL</div>
             <div class="bill-total-amount">${fmtMoney(total)}</div>
-            ${debt>0?`<button class="btn btn-green btn-sm" onclick="openPayModal(${inv.id})" style="margin-top:6px;font-size:11px;">💳 Registrar pago</button>`:''}
+            ${debt>0?`<div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px;flex-wrap:wrap;"><button class="btn btn-green btn-sm" onclick="openPayModal(${inv.id})" style="font-size:11px;">💳 Registrar pago</button>${waDebtButton(inv)}</div>`:''}
           </div>
         </div>
       </div>`;
@@ -1576,7 +1588,7 @@ function renderPatientDetail(){
           <span style="color:var(--ink3);">Total: <b>${fmtMoney(total)}</b> · Pagado: <span style="color:var(--green-d);">${fmtMoney(inv.paid)}</span></span>
           ${debt>0?`<span style="color:var(--red);font-weight:600;">Saldo: ${fmtMoney(debt)}</span>`:''}
         </div>
-        ${debt>0?`<div style="margin-top:8px;"><button class="btn btn-green btn-sm" onclick="openPayModal(${inv.id})" style="font-size:11px;">💳 Registrar pago</button></div>`:''}
+        ${debt>0?`<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-green btn-sm" onclick="openPayModal(${inv.id})" style="font-size:11px;">💳 Registrar pago</button>${waDebtButton(inv)}</div>`:''}
       </div>`;
     }).join('')}`;
 
@@ -2068,9 +2080,7 @@ function openPostApptBillingModal(aid){
     <div id="inv-items-wrap"></div>
     <button class="add-item-btn" onclick="addInvItem()">+ Agregar ítem</button>
     <div class="hr"></div>
-    <div class="form-row">
-      <div class="form-group"><label>Monto pagado ($)</label><input id="inv-paid" type="number" min="0" step="100" placeholder="0"/></div>
-    </div>
+    <div class="form-group"><label>Estado del pago</label>${paymentStatusHTML()}</div>
     <div class="form-group"><label>Notas</label><textarea id="inv-notes" style="min-height:50px;" placeholder="Efectivo, transferencia, observaciones…"></textarea></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal()">Omitir cobro</button>
@@ -2079,7 +2089,7 @@ function openPostApptBillingModal(aid){
   </div>`);
   // Store pid on input for AC
   setTimeout(()=>{const inp=document.getElementById('inv-patient');if(inp&&pid)inp._pid=pid;},50);
-  renderInvItems();
+  renderInvItems();setPayStatus('none');
 }
 
 function savePostApptInvoice(pid,patient,tutor,phone){
@@ -2096,7 +2106,7 @@ function savePostApptInvoice(pid,patient,tutor,phone){
     tutor:document.getElementById('inv-tutor').value.trim()||tutor,
     phone:document.getElementById('inv-phone').value.trim()||phone,
     items:validItems.map(i=>({desc:i.desc.trim(),qty:+i.qty||1,price:+i.price||0})),
-    paid:+(document.getElementById('inv-paid').value)||0,
+    paid:Math.min(+(document.getElementById('inv-paid').value)||0,validItems.reduce((s,i)=>s+(+i.qty*(+i.price)||0),0)),
     notes:document.getElementById('inv-notes').value.trim()
   };
   DB.invoices.push(newInv);
@@ -2111,6 +2121,32 @@ function deleteAppt(aid){if(!confirm('¿Eliminar esta cita?'))return;DB.appointm
 //  INVOICE MODALS
 // ══════════════════════════════════════════════════════
 let editItems=[];
+let payStatus='none'; // 'full' | 'none' | 'partial'
+function paymentStatusHTML(){
+  return `<div class="pay-status-group">
+      <button type="button" class="pay-status-btn" data-pay="full" onclick="setPayStatus('full')">✅ Pagado</button>
+      <button type="button" class="pay-status-btn" data-pay="none" onclick="setPayStatus('none')">❌ No pagado</button>
+      <button type="button" class="pay-status-btn" data-pay="partial" onclick="setPayStatus('partial')">🔶 Parcial</button>
+    </div>
+    <div id="pay-partial-wrap" style="display:none;margin-top:8px;">
+      <input id="inv-paid" type="number" min="0" step="100" placeholder="Monto pagado"/>
+    </div>`;
+}
+function setPayStatus(status){
+  payStatus=status;
+  document.querySelectorAll('.pay-status-btn').forEach(b=>b.classList.toggle('active',b.dataset.pay===status));
+  const wrap=document.getElementById('pay-partial-wrap');
+  if(wrap)wrap.style.display=status==='partial'?'':'none';
+  syncPaidFromStatus();
+  if(status==='partial'){const inp=document.getElementById('inv-paid');if(inp)setTimeout(()=>inp.focus(),0);}
+}
+function syncPaidFromStatus(){
+  const inp=document.getElementById('inv-paid');if(!inp)return;
+  const total=editItems.reduce((s,i)=>s+(+i.qty*(+i.price)||0),0);
+  if(payStatus==='full')inp.value=total;
+  else if(payStatus==='none')inp.value=0;
+  // 'partial' → se deja el valor que haya escrito la persona
+}
 
 function openNewInvoiceModal(prefillPid){
   const pp=prefillPid?DB.patients.find(x=>x.id===prefillPid):null;
@@ -2135,9 +2171,7 @@ function openNewInvoiceModal(prefillPid){
     <div id="inv-items-wrap"></div>
     <button class="add-item-btn" onclick="addInvItem()">+ Agregar ítem</button>
     <div class="hr"></div>
-    <div class="form-row">
-      <div class="form-group"><label>Monto pagado ($)</label><input id="inv-paid" type="number" min="0" step="100" placeholder="0"/></div>
-    </div>
+    <div class="form-group"><label>Estado del pago</label>${paymentStatusHTML()}</div>
     <div class="form-group"><label>Notas</label><textarea id="inv-notes" style="min-height:50px;" placeholder="Observaciones, acuerdos de pago…"></textarea></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal()">Cancelar</button>
@@ -2145,7 +2179,7 @@ function openNewInvoiceModal(prefillPid){
     </div>
   </div>`);
   if(pp){setTimeout(()=>{document.getElementById('inv-patient')._pid=pp.id;},50);}
-  renderInvItems();
+  renderInvItems();setPayStatus('none');
 }
 
 function renderInvItems(){
@@ -2189,6 +2223,7 @@ function updateInvTotalPreview(){
   const total=editItems.reduce((s,i)=>s+(+i.qty*(+i.price)||0),0);
   const prev=document.getElementById('inv-total-preview');
   if(prev)prev.textContent=`Total: ${fmtMoney(total)}`;
+  syncPaidFromStatus();
 }
 
 function invPatientAC(){
@@ -2223,7 +2258,7 @@ function saveNewInvoice(){
     tutor:document.getElementById('inv-tutor').value.trim(),
     phone:document.getElementById('inv-phone').value.trim(),
     items:validItems.map(i=>({desc:i.desc.trim(),qty:+i.qty||1,price:+i.price||0})),
-    paid:+(document.getElementById('inv-paid').value)||0,
+    paid:Math.min(+(document.getElementById('inv-paid').value)||0,validItems.reduce((s,i)=>s+(+i.qty*(+i.price)||0),0)),
     notes:document.getElementById('inv-notes').value.trim()
   });
   saveDB();closeModal();showToast('Cobro registrado ✓');
@@ -2251,9 +2286,7 @@ function openEditInvoiceModal(invId){
     <div id="inv-items-wrap"></div>
     <button class="add-item-btn" onclick="addInvItem()">+ Agregar ítem</button>
     <div class="hr"></div>
-    <div class="form-row">
-      <div class="form-group"><label>Monto pagado ($)</label><input id="inv-paid" type="number" min="0" step="100" value="${inv.paid}"/></div>
-    </div>
+    <div class="form-group"><label>Estado del pago</label>${paymentStatusHTML()}</div>
     <div class="form-group"><label>Notas</label><textarea id="inv-notes" style="min-height:50px;">${inv.notes||''}</textarea></div>
     <div class="modal-footer">
       <button class="btn btn-danger" onclick="deleteInvoice(${invId})">Eliminar</button>
@@ -2262,6 +2295,10 @@ function openEditInvoiceModal(invId){
     </div>
   </div>`);
   renderInvItems();
+  const _total=editItems.reduce((s,i)=>s+(+i.qty*(+i.price)||0),0);
+  if(inv.paid<=0){setPayStatus('none');}
+  else if(inv.paid>=_total){setPayStatus('full');}
+  else{const _pinp=document.getElementById('inv-paid');if(_pinp)_pinp.value=inv.paid;setPayStatus('partial');}
 }
 function saveEditInvoice(invId){
   const inv=DB.invoices.find(x=>x.id===invId);if(!inv)return;
@@ -2272,7 +2309,7 @@ function saveEditInvoice(invId){
   inv.phone=document.getElementById('inv-phone').value.trim();
   inv.date=document.getElementById('inv-date').value||inv.date;
   inv.items=validItems.map(i=>({desc:i.desc.trim(),qty:+i.qty||1,price:+i.price||0}));
-  inv.paid=+(document.getElementById('inv-paid').value)||0;
+  inv.paid=Math.min(+(document.getElementById('inv-paid').value)||0,validItems.reduce((s,i)=>s+(+i.qty*(+i.price)||0),0));
   inv.notes=document.getElementById('inv-notes').value.trim();
   saveDB();closeModal();showToast('Cobro actualizado ✓');renderAll();
 }
