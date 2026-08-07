@@ -341,7 +341,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.20</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.21</div>
   </div>
 </div>
 
@@ -375,6 +375,9 @@ select{cursor:pointer}
       <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>Recordatorios
       <span class="nav-badge" id="alertBadge">0</span>
     </div>
+    <div class="nav-item" id="nav-catalog" onclick="nav('catalog')">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M21.41 11.58l-9-9C12.05 2.22 11.55 2 11 2H4c-1.1 0-2 .9-2 2v7c0 .55.22 1.05.59 1.41l9 9c.36.36.86.59 1.41.59s1.05-.23 1.41-.59l7-7c.37-.36.59-.86.59-1.41s-.23-1.06-.59-1.42zM5.5 7C4.67 7 4 6.33 4 5.5S4.67 4 5.5 4 7 4.67 7 5.5 6.33 7 5.5 7z"/></svg>Catálogo
+    </div>
   </nav>
   <div class="sidebar-divider"></div>
   <div class="recent-label">Todos los pacientes</div>
@@ -382,7 +385,7 @@ select{cursor:pointer}
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
     <button onclick="exportBackup()" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo</button>
-    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.20</div>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.21</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -416,7 +419,7 @@ const PAL=['#1e8fa0','#5238a8','#1a9e78','#c94040','#c97d10','#2e6010','#952d59'
 
 
 // ── TARIFAS DE CONSULTA ──
-const TARIFAS = [
+let TARIFAS = [
   {cat:'Consultas',items:[
     {desc:'Consulta veterinaria Curicó',price:35000},
     {desc:'Consulta veterinaria camada Curicó',price:40000},
@@ -472,6 +475,136 @@ const TARIFAS = [
   ]},
 ];
 function tarifasFlat(){return TARIFAS.flatMap(c=>c.items);}
+// El catálogo se puede editar desde la sección "Catálogo" (⚙) y se guarda en Supabase
+// (tabla app_config, clave 'tarifas') además de una copia local para que funcione sin internet.
+function loadTarifasLocal(){
+  try{const r=localStorage.getItem('claudmedvet_tarifas_v1');if(r){const parsed=JSON.parse(r);if(Array.isArray(parsed)&&parsed.length)TARIFAS=parsed;}}catch(e){}
+}
+function saveTarifasLocal(){
+  try{localStorage.setItem('claudmedvet_tarifas_v1',JSON.stringify(TARIFAS));}catch(e){console.warn('No se pudo guardar el catálogo localmente',e);}
+}
+function pushTarifas(){
+  if(!cloudSyncEnabled)return;
+  sbFetch('app_config?on_conflict=key',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify([{key:'tarifas',value:TARIFAS}])})
+    .then(()=>{cloudStatus='online';renderCloudBadge();})
+    .catch((err)=>{console.error('pushTarifas failed',err);if(err&&err.isApiError){cloudStatus='error';lastCloudErrorDetail=String(err.status||'')+' '+String(err.message||'');}else{cloudStatus='offline';}renderCloudBadge();});
+}
+function persistTarifas(){
+  saveTarifasLocal();
+  pushTarifas();
+  renderAll();
+}
+
+// ══════════════════════════════════════════════════════
+//  CATÁLOGO DE PRECIOS (administración manual)
+// ══════════════════════════════════════════════════════
+function renderCatalogView(){
+  return `<div style="max-width:900px;">
+    <div class="section-heading"><span class="section-title">Catálogo de precios (${tarifasFlat().length} items)</span>
+      <button class="btn btn-teal btn-sm" onclick="openNewCategoryModal()">+ Nueva categoría</button></div>
+    <div style="font-size:12px;color:var(--ink4);margin:-6px 0 14px;">Estos precios son los que aparecen al armar un cobro. Los cambios se guardan automáticamente y se sincronizan en todos tus dispositivos.</div>
+    ${TARIFAS.length===0?'<div class="empty"><div class="empty-icon">🏷️</div><div class="empty-text">Sin categorías todavía</div></div>':
+    TARIFAS.map((cat,ci)=>`<div class="card" style="margin-bottom:14px;padding:14px 16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;gap:8px;">
+        <div style="font-size:14px;font-weight:700;flex:1;min-width:0;">${cat.cat}</div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <button class="btn btn-xs" onclick="renameCategory(${ci})">✏ Renombrar</button>
+          <button class="btn btn-xs btn-danger" onclick="deleteCategory(${ci})">✕ Eliminar</button>
+        </div>
+      </div>
+      ${cat.items.length===0?'<div style="font-size:12px;color:var(--ink4);padding:8px 0;">Sin items en esta categoría.</div>':
+      cat.items.map((it,ii)=>`<div class="vac-row" style="${ii===0?'padding-top:8px':''}">
+        <div style="flex:1;min-width:0;"><div style="font-size:14px;">${it.desc}</div></div>
+        <div style="font-size:13px;font-weight:600;color:var(--teal-d);min-width:90px;text-align:right;">${fmtMoney(it.price)}</div>
+        <button class="btn btn-sm" onclick="openEditCatalogItemModal(${ci},${ii})" style="font-size:11px;">Editar</button>
+        <button class="btn btn-xs btn-danger" onclick="deleteCatalogItem(${ci},${ii})">✕</button>
+      </div>`).join('')}
+      <div style="margin-top:8px;"><button class="btn btn-sm" onclick="openNewCatalogItemModal(${ci})">+ Agregar item</button></div>
+    </div>`).join('')}
+  </div>`;
+}
+function openNewCategoryModal(){
+  openModal(`<div class="modal modal-sm">
+    <div class="modal-title">Nueva categoría</div>
+    <div class="form-group"><label>Nombre *</label><input id="cat-name" type="text" placeholder="Ej: Estética"/></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-teal" onclick="saveNewCategory()">Guardar</button>
+    </div>
+  </div>`);
+}
+function saveNewCategory(){
+  const name=document.getElementById('cat-name').value.trim();
+  if(!name){alert('El nombre es obligatorio.');return;}
+  if(TARIFAS.some(c=>c.cat.toLowerCase()===name.toLowerCase())){alert('Ya existe una categoría con ese nombre.');return;}
+  TARIFAS.push({cat:name,items:[]});
+  closeModal();persistTarifas();showToast('Categoría creada ✓');
+}
+function renameCategory(ci){
+  const cat=TARIFAS[ci];if(!cat)return;
+  const name=prompt('Nuevo nombre de la categoría:',cat.cat);
+  if(name===null)return;
+  const trimmed=name.trim();
+  if(!trimmed){alert('El nombre no puede estar vacío.');return;}
+  cat.cat=trimmed;
+  persistTarifas();showToast('Categoría actualizada ✓');
+}
+function deleteCategory(ci){
+  const cat=TARIFAS[ci];if(!cat)return;
+  const msg=cat.items.length>0?`Esta categoría tiene ${cat.items.length} item(s). ¿Eliminar de todas formas?`:'¿Eliminar esta categoría?';
+  if(!confirm(msg))return;
+  TARIFAS.splice(ci,1);
+  persistTarifas();showToast('Categoría eliminada');
+}
+function openNewCatalogItemModal(ci){
+  const cat=TARIFAS[ci];if(!cat)return;
+  openModal(`<div class="modal modal-sm">
+    <div class="modal-title">Agregar item — ${cat.cat}</div>
+    <div class="form-group"><label>Descripción *</label><input id="ci-desc" type="text" placeholder="Ej: Consulta veterinaria Curicó"/></div>
+    <div class="form-group"><label>Precio *</label><input id="ci-price" type="number" min="0" step="100" placeholder="35000"/></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-teal" onclick="saveCatalogItem(${ci})">Guardar</button>
+    </div>
+  </div>`);
+}
+function saveCatalogItem(ci){
+  const cat=TARIFAS[ci];if(!cat)return;
+  const desc=document.getElementById('ci-desc').value.trim();
+  const price=+document.getElementById('ci-price').value;
+  if(!desc){alert('La descripción es obligatoria.');return;}
+  if(!price||price<0){alert('Ingresa un precio válido.');return;}
+  cat.items.push({desc,price});
+  closeModal();persistTarifas();showToast('Item agregado ✓');
+}
+function openEditCatalogItemModal(ci,ii){
+  const cat=TARIFAS[ci];if(!cat)return;const it=cat.items[ii];if(!it)return;
+  openModal(`<div class="modal modal-sm">
+    <div class="modal-title">Editar item — ${cat.cat}</div>
+    <div class="form-group"><label>Descripción *</label><input id="ci-desc" type="text" value="${it.desc.replace(/"/g,'&quot;')}"/></div>
+    <div class="form-group"><label>Precio *</label><input id="ci-price" type="number" min="0" step="100" value="${it.price}"/></div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" onclick="deleteCatalogItem(${ci},${ii})">Eliminar</button>
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-teal" onclick="saveEditCatalogItem(${ci},${ii})">Guardar cambios</button>
+    </div>
+  </div>`);
+}
+function saveEditCatalogItem(ci,ii){
+  const cat=TARIFAS[ci];if(!cat)return;const it=cat.items[ii];if(!it)return;
+  const desc=document.getElementById('ci-desc').value.trim();
+  const price=+document.getElementById('ci-price').value;
+  if(!desc){alert('La descripción es obligatoria.');return;}
+  if(!price||price<0){alert('Ingresa un precio válido.');return;}
+  it.desc=desc;it.price=price;
+  closeModal();persistTarifas();showToast('Item actualizado ✓');
+}
+function deleteCatalogItem(ci,ii){
+  const cat=TARIFAS[ci];if(!cat)return;
+  if(!confirm('¿Eliminar este item del catálogo?'))return;
+  cat.items.splice(ii,1);
+  closeModal();persistTarifas();showToast('Item eliminado');
+}
 
 // ── LISTADO DE VACUNAS (para no escribirlas a mano cada vez) ──
 const VACCINE_NAMES=['Séxtuple','Antirrábica','Puppy DP','Triple felina','Leucemia','KC intranasal','Intra-trac oral'];
@@ -663,11 +796,17 @@ async function pullFromCloud(){
     const invRows=await iRes.json();
     const configRows=await cRes.json();
 
+    const cfg={};configRows.forEach(c=>cfg[c.key]=c.value);
+    // El catálogo de precios vive en app_config (clave 'tarifas') y se sincroniza
+    // independiente de si hay pacientes/citas/cobros, para que el veterinario pueda
+    // configurarlo desde cualquier dispositivo.
+    if(cfg.tarifas&&Array.isArray(cfg.tarifas)&&cfg.tarifas.length){
+      TARIFAS=cfg.tarifas;saveTarifasLocal();
+    }
     if(patientsRows.length||apptRows.length||invRows.length){
       DB.patients=patientsRows.map(rowToPatient);
       DB.appointments=apptRows.map(rowToAppt);
       DB.invoices=invRows.map(rowToInvoice);
-      const cfg={};configRows.forEach(c=>cfg[c.key]=c.value);
       DB.nextId=cfg.next_patient_id||(Math.max(0,...DB.patients.map(p=>p.id))+1);
       DB.nextAid=cfg.next_appt_id||(Math.max(0,...DB.appointments.map(a=>a.id))+1);
       DB.nextInvId=cfg.next_invoice_id||(Math.max(0,...DB.invoices.map(i=>i.id))+1);
@@ -719,7 +858,8 @@ function pushConfig(){
   const rows=[
     {key:'next_patient_id',value:DB.nextId},
     {key:'next_appt_id',value:DB.nextAid},
-    {key:'next_invoice_id',value:DB.nextInvId}
+    {key:'next_invoice_id',value:DB.nextInvId},
+    {key:'tarifas',value:TARIFAS}
   ];
   sbFetch('app_config?on_conflict=key',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rows)}).catch((err)=>console.error('pushConfig failed',err));
 }
@@ -1078,7 +1218,7 @@ function renderSidebar(){
 }
 
 function renderMain(){
-  const titles={dashboard:'Inicio',patients:'Pacientes',alerts:'Recordatorios',agenda:'Agenda',billing:'Cobros'};
+  const titles={dashboard:'Inicio',patients:'Pacientes',alerts:'Recordatorios',agenda:'Agenda',billing:'Cobros',catalog:'Catálogo'};
   const pat=DB.patients.find(p=>p.id===selectedPid);
   document.getElementById('topbarTitle').textContent=view==='patient'&&pat?pat.name:(titles[view]||'');
   const c=document.getElementById('mainContent');
@@ -1087,6 +1227,7 @@ function renderMain(){
   else if(view==='alerts')   c.innerHTML=renderAlertsView();
   else if(view==='agenda')   c.innerHTML=renderAgendaView();
   else if(view==='billing')  c.innerHTML=renderBillingView();
+  else if(view==='catalog')  c.innerHTML=renderCatalogView();
   else if(view==='patient')  c.innerHTML=renderPatientDetail();
 }
 
@@ -2546,7 +2687,7 @@ function doLogin(){
     document.getElementById('loginScreen').style.display='none';
     err.style.display='none';
     // Init app after successful login
-    loadDB();renderAll();
+    loadDB();loadTarifasLocal();renderAll();
     pullFromCloud().then(gotCloud=>{
       if(!gotCloud && DB.patients.length===0){initSampleData();syncAllToCloud();}
       renderAll();
@@ -2583,7 +2724,7 @@ document.addEventListener('DOMContentLoaded', function(){
 if(checkSession()){
   // Already logged in — hide login screen and load app
   document.getElementById('loginScreen').style.display='none';
-  loadDB();restoreViewState();renderAll();
+  loadDB();loadTarifasLocal();restoreViewState();renderAll();
   pullFromCloud().then(gotCloudData=>{
     if(!gotCloudData && DB.patients.length===0){initSampleData();syncAllToCloud();}
     restoreViewState();renderAll();
