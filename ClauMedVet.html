@@ -341,7 +341,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.18</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.20</div>
   </div>
 </div>
 
@@ -382,7 +382,7 @@ select{cursor:pointer}
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
     <button onclick="exportBackup()" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo</button>
-    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.18</div>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.20</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -426,6 +426,12 @@ const TARIFAS = [
     {desc:'Consulta urgencia Curicó',price:45000},
     {desc:'Consulta urgencia alrededores',price:50000},
     {desc:'Consulta paciente extra',price:6000},
+  ]},
+  {cat:'Toma de presión',items:[
+    {desc:'Toma de presión consulta',price:5000},
+    {desc:'Visita toma de presión Curicó',price:35000},
+    {desc:'Visita toma de presión alrededores',price:40000},
+    {desc:'Toma de presión control',price:30000},
   ]},
   {cat:'Vacunas',items:[
     {desc:'Vacuna antirrábica',price:14500},
@@ -554,6 +560,18 @@ async function uploadExamFile(file,pid){
   });
   if(!res.ok){const txt=await res.text().catch(()=>'');throw new Error(`${res.status} ${txt}`);}
   return {url:`${SUPABASE_URL}/storage/v1/object/public/${EXAM_BUCKET}/${path}`,name:file.name};
+}
+const RECETA_BUCKET='recetas';
+async function uploadRecetaFile(file,pid,hid){
+  const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+  const path=`${pid}/${hid}/${Date.now()}_${safeName}`;
+  const res=await fetch(`${SUPABASE_URL}/storage/v1/object/${RECETA_BUCKET}/${path}`,{
+    method:'POST',
+    headers:{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,'Content-Type':file.type||'application/octet-stream'},
+    body:file
+  });
+  if(!res.ok){const txt=await res.text().catch(()=>'');throw new Error(`${res.status} ${txt}`);}
+  return {id:Date.now().toString(36)+Math.random().toString(36).slice(2,8),url:`${SUPABASE_URL}/storage/v1/object/public/${RECETA_BUCKET}/${path}`,name:file.name};
 }
 
 async function sbFetch(path,opts={}){
@@ -1597,6 +1615,7 @@ function renderPatientDetail(){
       <div class="hc-motivo">${h.motivo}</div>
       ${h.notas?`<div class="hc-notes">${h.notas}</div>`:''}
       ${h.peso||h.temp?`<div class="hc-vitals">${h.peso?`<span class="vital">⚖️ ${h.peso} kg</span>`:''}${h.temp?`<span class="vital">🌡️ ${h.temp}°C</span>`:''}</div>`:''}
+      ${recetasThumbsHTML(p.id,h.id,h.recetas,false)}
     </div>`).join('')}`;
 
   const vacHTML=`<div class="section-heading"><span class="section-title">Vacunas (${vaccs.length})</span>
@@ -1805,6 +1824,12 @@ function openPhotoLightbox(pid){
     <img src="${p.photo}" alt="${p.name}" style="max-width:92vw;max-height:88vh;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.4);display:block;" onclick="event.stopPropagation()"/>
   </div>`;
 }
+function openImageLightbox(url,alt){
+  document.getElementById('modalContainer').innerHTML=`<div class="overlay" onclick="closeModal()">
+    <button class="lightbox-close" onclick="closeModal()" aria-label="Cerrar">✕</button>
+    <img src="${url}" alt="${alt||''}" style="max-width:92vw;max-height:88vh;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.4);display:block;" onclick="event.stopPropagation()"/>
+  </div>`;
+}
 function handlePhotoUpload(event,pid){
   const file=event.target.files[0];if(!file)return;
   if(file.size>10*1024*1024){alert('La imagen es muy grande. Por favor usa una imagen de menos de 10MB.');return;}
@@ -1853,21 +1878,71 @@ function openNewVisitModal(pid, prefill){
       <div class="form-group"><label>Temperatura (°C)</label><input id="v-temp" type="number" step="0.1" placeholder="38.5" value="${pf.temp||''}"/></div>
     </div>
     <div class="form-group"><label>Notas clínicas</label><textarea id="v-notas" placeholder="Diagnóstico, tratamiento…">${pf.notas||''}</textarea></div>
+    <div class="form-group"><label>Fotos de recetas (opcional)</label><input id="v-recetas" type="file" accept="image/*" multiple/></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-teal" onclick="saveVisit(${pid})">Guardar</button>
+      <button class="btn btn-teal" id="v-save-btn" onclick="saveVisit(${pid})">Guardar</button>
     </div>
   </div>`);
 }
-function saveVisit(pid){
+async function saveVisit(pid){
   const p=DB.patients.find(x=>x.id===pid);if(!p)return;
   const motivo=document.getElementById('v-motivo').value.trim();
   if(!motivo){alert('El motivo es obligatorio.');return;}
   const peso=document.getElementById('v-peso').value;if(peso)p.weight=peso;
-  p.history.push({id:Date.now(),date:document.getElementById('v-date').value,motivo,peso,temp:document.getElementById('v-temp').value,notas:document.getElementById('v-notas').value.trim()});
+  const fileInput=document.getElementById('v-recetas');
+  const files=fileInput?Array.from(fileInput.files):[];
+  const hid=Date.now();
+  let recetas=[];
+  const btn=document.getElementById('v-save-btn');
+  if(files.length){
+    if(btn){btn.disabled=true;btn.textContent='Subiendo…';}
+    try{
+      recetas=await Promise.all(files.map(f=>uploadRecetaFile(f,pid,hid)));
+    }catch(err){
+      console.error('uploadRecetaFile failed',err);
+      if(btn){btn.disabled=false;btn.textContent='Guardar';}
+      alert('No se pudo subir alguna foto de receta. Revisa tu conexión a internet e intenta de nuevo.\n\n(La consulta no se guardó.)');
+      return;
+    }
+  }
+  p.history.push({id:hid,date:document.getElementById('v-date').value,motivo,peso,temp:document.getElementById('v-temp').value,notas:document.getElementById('v-notas').value.trim(),recetas});
   saveDB();closeModal();showToast('Consulta registrada ✓');patientTab='historial';renderAll();
 }
 function deleteVisit(pid,hid){if(!confirm('¿Eliminar esta consulta?'))return;const p=DB.patients.find(x=>x.id===pid);if(!p)return;p.history=p.history.filter(h=>h.id!==hid);saveDB();showToast('Eliminada');renderAll();}
+function recetasThumbsHTML(pid,hid,recetas,editable){
+  if(!recetas||!recetas.length)return editable?'<div style="font-size:12px;color:var(--ink4);">Sin fotos aún.</div>':'';
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">${recetas.map(r=>`
+    <div style="position:relative;">
+      <img src="${r.url}" alt="${(r.name||'receta').replace(/"/g,'&quot;')}" onclick="openImageLightbox('${r.url}','${(r.name||'').replace(/'/g,"\\'")}')" style="width:64px;height:64px;object-fit:cover;border-radius:8px;cursor:pointer;border:1px solid var(--border);"/>
+      ${editable?`<button onclick="deleteReceta(${pid},${hid},'${r.id}')" title="Eliminar" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--red);color:#fff;border:none;font-size:11px;line-height:1;cursor:pointer;">✕</button>`:''}
+    </div>`).join('')}</div>`;
+}
+async function addRecetaPhotos(pid,hid,event){
+  const files=Array.from(event.target.files||[]);if(!files.length)return;
+  const p=DB.patients.find(x=>x.id===pid);if(!p)return;
+  const h=p.history.find(x=>x.id===hid);if(!h)return;
+  const addBtn=document.getElementById('v-addreceta-btn');
+  if(addBtn){addBtn.disabled=true;addBtn.textContent='Subiendo…';}
+  try{
+    const nuevas=await Promise.all(files.map(f=>uploadRecetaFile(f,pid,hid)));
+    h.recetas=(h.recetas||[]).concat(nuevas);
+    saveDB();showToast('Foto(s) agregada(s) ✓');
+    openEditVisitModal(pid,hid);
+  }catch(err){
+    console.error('addRecetaPhotos failed',err);
+    alert('No se pudo subir la foto. Revisa tu conexión a internet e intenta de nuevo.');
+    if(addBtn){addBtn.disabled=false;addBtn.textContent='+ Agregar foto';}
+  }
+}
+function deleteReceta(pid,hid,rid){
+  if(!confirm('¿Eliminar esta foto de receta?'))return;
+  const p=DB.patients.find(x=>x.id===pid);if(!p)return;
+  const h=p.history.find(x=>x.id===hid);if(!h)return;
+  h.recetas=(h.recetas||[]).filter(r=>String(r.id)!==String(rid));
+  saveDB();showToast('Eliminada');
+  openEditVisitModal(pid,hid);
+}
 function openEditVisitModal(pid,hid){
   const p=DB.patients.find(x=>x.id===pid);if(!p)return;
   const h=p.history.find(x=>x.id===hid);if(!h)return;
@@ -1880,6 +1955,11 @@ function openEditVisitModal(pid,hid){
       <div class="form-group"><label>Temperatura (°C)</label><input id="v-temp" type="number" step="0.1" placeholder="38.5" value="${h.temp||''}"/></div>
     </div>
     <div class="form-group"><label>Notas clínicas</label><textarea id="v-notas" placeholder="Diagnóstico, tratamiento…">${h.notas||''}</textarea></div>
+    <div class="form-group"><label>Fotos de recetas</label>
+      ${recetasThumbsHTML(pid,hid,h.recetas,true)}
+      <input type="file" id="v-addreceta-input" accept="image/*" multiple style="display:none;" onchange="addRecetaPhotos(${pid},${hid},event)"/>
+      <button type="button" class="btn btn-sm" id="v-addreceta-btn" onclick="document.getElementById('v-addreceta-input').click()" style="margin-top:6px;">+ Agregar foto</button>
+    </div>
     <div class="modal-footer">
       <button class="btn btn-danger" onclick="deleteVisit(${pid},${hid})">Eliminar</button>
       <button class="btn" onclick="closeModal()">Cancelar</button>
