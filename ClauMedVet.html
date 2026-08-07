@@ -341,7 +341,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.17</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.18</div>
   </div>
 </div>
 
@@ -382,7 +382,7 @@ select{cursor:pointer}
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
     <button onclick="exportBackup()" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo</button>
-    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.17</div>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.18</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -495,6 +495,34 @@ function getVaccineName(prefix){
   return sel.value;
 }
 
+// ── LISTADO DE TIPOS DE EXAMEN (para no escribirlos a mano cada vez) ──
+const EXAM_TYPES=['Hemograma','Perfil bioquímico','Radiografía','Ecografía','Orina','Coprológico'];
+function examTypeSelectHTML(prefix,current){
+  const isKnown=EXAM_TYPES.includes(current);
+  const isCustom=!!current&&!isKnown;
+  const opts=EXAM_TYPES.map(n=>`<option value="${n}" ${current===n?'selected':''}>${n}</option>`).join('');
+  return `<select id="${prefix}-tipo-sel" onchange="toggleExamTypeCustom('${prefix}')">
+      <option value="">Selecciona…</option>
+      ${opts}
+      <option value="__otra__" ${isCustom?'selected':''}>Otro (escribir)…</option>
+    </select>
+    <input id="${prefix}-tipo-custom" type="text" placeholder="Tipo de examen" value="${isCustom?current:''}" style="margin-top:6px;${isCustom?'':'display:none;'}"/>`;
+}
+function toggleExamTypeCustom(prefix){
+  const sel=document.getElementById(prefix+'-tipo-sel');
+  const inp=document.getElementById(prefix+'-tipo-custom');
+  if(!sel||!inp)return;
+  inp.style.display=sel.value==='__otra__'?'':'none';
+  if(sel.value==='__otra__')inp.focus();
+}
+function getExamType(prefix){
+  const sel=document.getElementById(prefix+'-tipo-sel');
+  const inp=document.getElementById(prefix+'-tipo-custom');
+  if(!sel)return '';
+  if(sel.value==='__otra__')return inp?inp.value.trim():'';
+  return sel.value;
+}
+
 
 const EMOJIS={dog:'🐶',cat:'🐱',rabbit:'🐰',bird:'🐦',other:'🐾'};
 const SPECIES_ES={dog:'Perro',cat:'Gato',rabbit:'Conejo',bird:'Ave',other:'Otro'};
@@ -515,6 +543,18 @@ const SB_HEADERS={
 };
 let cloudSyncEnabled=true;
 let cloudStatus='connecting'; // connecting | online | offline | error
+const EXAM_BUCKET='examenes';
+async function uploadExamFile(file,pid){
+  const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+  const path=`${pid}/${Date.now()}_${safeName}`;
+  const res=await fetch(`${SUPABASE_URL}/storage/v1/object/${EXAM_BUCKET}/${path}`,{
+    method:'POST',
+    headers:{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,'Content-Type':file.type||'application/octet-stream'},
+    body:file
+  });
+  if(!res.ok){const txt=await res.text().catch(()=>'');throw new Error(`${res.status} ${txt}`);}
+  return {url:`${SUPABASE_URL}/storage/v1/object/public/${EXAM_BUCKET}/${path}`,name:file.name};
+}
 
 async function sbFetch(path,opts={}){
   const url=`${SUPABASE_URL}/rest/v1/${path}`;
@@ -546,7 +586,7 @@ function patientToRow(p){
     id:p.id,name:p.name,species:p.species,breed:p.breed||null,age:p.age||null,birthdate:p.birthdate||null,
     weight:p.weight||null,tutor:p.tutor,phone:p.phone||null,email:p.email||null,
     addresses:p.addresses||[],color:p.color||null,
-    vaccinations:p.vaccinations||[],history:p.history||[],
+    vaccinations:p.vaccinations||[],history:p.history||[],exams:p.exams||[],
     photo:p.photo||null
   };
 }
@@ -572,7 +612,7 @@ function rowToPatient(r){
     age:isBirthdate(r.age)?null:(r.age||'0'),
     weight:r.weight||'0',tutor:r.tutor,phone:r.phone||'',email:r.email||'',
     addresses:r.addresses||[],color:r.color||PAL[0],
-    vaccinations:r.vaccinations||[],history:r.history||[],
+    vaccinations:r.vaccinations||[],history:r.history||[],exams:r.exams||[],
     photo:r.photo||null
   };
 }
@@ -1540,6 +1580,7 @@ function renderPatientDetail(){
   const p=DB.patients.find(x=>x.id===selectedPid);if(!p)return '';
   const history=[...(p.history||[])].reverse();
   const vaccs=p.vaccinations||[];
+  const exams=[...(p.exams||[])].reverse();
   const allA=p.vaccinations.filter(v=>v.next&&daysUntil(v.next)<=14);
   const patInvoices=DB.invoices.filter(i=>i.patientId===p.id);
   const patDebt=patInvoices.reduce((s,i)=>s+invDebt(i),0);
@@ -1592,6 +1633,18 @@ function renderPatientDetail(){
       </div>`;
     }).join('')}`;
 
+  const examsHTML=`<div class="section-heading"><span class="section-title">Exámenes (${exams.length})</span>
+    <button class="btn btn-teal btn-sm" onclick="openNewExamModal(${p.id})">+ Agregar examen</button></div>
+    ${exams.length===0?'<div class="empty"><div class="empty-icon">🧪</div><div class="empty-text">Sin exámenes</div></div>':
+    exams.map(ex=>`<div class="history-card">
+      <div class="hc-header"><span class="hc-date">${fmtDate(ex.date)} · ${ex.tipo}</span>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-xs btn-danger" onclick="deleteExam(${p.id},${ex.id})">✕</button>
+      </div></div>
+      ${ex.notas?`<div class="hc-notes">${ex.notas}</div>`:''}
+      ${ex.fileUrl?`<div style="margin-top:6px;"><a href="${ex.fileUrl}" target="_blank" rel="noopener" class="btn btn-sm">📎 ${ex.fileName||'Ver archivo'}</a></div>`:''}
+    </div>`).join('')}`;
+
   return `<div style="max-width:840px;">
     <span class="back-link" onclick="nav('patients')">← Volver a pacientes</span>
     <div class="detail-wrap">
@@ -1626,9 +1679,10 @@ function renderPatientDetail(){
         <div class="tab ${patientTab==='historial'?'active':''}" onclick="switchTab('historial')">📋 Historial</div>
         <div class="tab ${patientTab==='vacunas'?'active':''}" onclick="switchTab('vacunas')">💉 Vacunas</div>
         <div class="tab ${patientTab==='cobros'?'active':''}" onclick="switchTab('cobros')">💰 Cobros${patDebt>0?` <span style="color:var(--red);font-size:11px;">(${fmtMoney(patDebt)})</span>`:''}</div>
+        <div class="tab ${patientTab==='examenes'?'active':''}" onclick="switchTab('examenes')">🧪 Exámenes</div>
       </div>
       <div class="tab-content">
-        ${patientTab==='historial'?histHTML:patientTab==='vacunas'?vacHTML:cobrosHTML}
+        ${patientTab==='historial'?histHTML:patientTab==='vacunas'?vacHTML:patientTab==='cobros'?cobrosHTML:examsHTML}
       </div>
     </div>
   </div>`;
@@ -1691,7 +1745,7 @@ function saveNewPatient(){
     breed:document.getElementById('f-breed').value.trim()||'Sin especificar',
     birthdate:document.getElementById('f-birthdate').value||null,weight:document.getElementById('f-weight').value||'0',
     tutor,phone:document.getElementById('f-phone').value.trim(),email:document.getElementById('f-email').value.trim(),
-    addresses:addr?[addr]:[],color:PAL[DB.patients.length%PAL.length],vaccinations:[],history:[]};
+    addresses:addr?[addr]:[],color:PAL[DB.patients.length%PAL.length],vaccinations:[],history:[],exams:[]};
   DB.patients.push(p);saveDB();closeModal();showToast('Paciente registrado ✓');nav('patient',p.id);
 }
 function openEditPatientModal(pid){
@@ -1889,6 +1943,51 @@ function saveEditVaccine(pid,idx){
   saveDB();closeModal();showToast('Actualizada ✓');renderAll();
 }
 function deleteVaccine(pid,idx){if(!confirm('¿Eliminar esta vacuna?'))return;const p=DB.patients.find(x=>x.id===pid);if(!p)return;p.vaccinations.splice(idx,1);saveDB();showToast('Eliminada');renderAll();}
+
+function openNewExamModal(pid){
+  openModal(`<div class="modal modal-sm">
+    <div class="modal-title">Agregar examen</div>
+    <div class="form-group"><label>Fecha *</label><input id="ex-date" type="date" value="${todayStr()}"/></div>
+    <div class="form-group"><label>Tipo *</label>${examTypeSelectHTML('ex','')}</div>
+    <div class="form-group"><label>Notas</label><textarea id="ex-notas" placeholder="Resultados, observaciones…"></textarea></div>
+    <div class="form-group"><label>Archivo (PDF o imagen)</label><input id="ex-file" type="file" accept="application/pdf,image/*"/></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-teal" id="ex-save-btn" onclick="saveExam(${pid})">Guardar</button>
+    </div>
+  </div>`);
+}
+async function saveExam(pid){
+  const p=DB.patients.find(x=>x.id===pid);if(!p)return;
+  const tipo=getExamType('ex');if(!tipo){alert('El tipo de examen es obligatorio.');return;}
+  const date=document.getElementById('ex-date').value;
+  const notas=document.getElementById('ex-notas').value.trim();
+  const file=document.getElementById('ex-file').files[0];
+  const btn=document.getElementById('ex-save-btn');
+  let fileUrl=null,fileName=null;
+  if(file){
+    if(file.size>20*1024*1024){alert('El archivo es muy grande. Usa uno de menos de 20MB.');return;}
+    btn.disabled=true;btn.textContent='Subiendo…';
+    try{
+      const up=await uploadExamFile(file,pid);
+      fileUrl=up.url;fileName=up.name;
+    }catch(err){
+      console.error('uploadExamFile failed',err);
+      btn.disabled=false;btn.textContent='Guardar';
+      alert('No se pudo subir el archivo. Revisa tu conexión a internet e intenta de nuevo.\n\n(El examen no se guardó.)');
+      return;
+    }
+  }
+  p.exams=p.exams||[];
+  p.exams.push({id:Date.now(),date,tipo,notas,fileUrl,fileName});
+  saveDB();pushPatient(p);closeModal();showToast('Examen guardado ✓');patientTab='examenes';renderAll();
+}
+function deleteExam(pid,eid){
+  if(!confirm('¿Eliminar este examen? (El archivo no se borrará del almacenamiento en la nube)'))return;
+  const p=DB.patients.find(x=>x.id===pid);if(!p)return;
+  p.exams=(p.exams||[]).filter(x=>x.id!==eid);
+  saveDB();pushPatient(p);showToast('Eliminado');renderAll();
+}
 
 // ══════════════════════════════════════════════════════
 //  APPOINTMENT MODALS  (with address autocomplete)
