@@ -341,7 +341,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.21</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-07-26.22</div>
   </div>
 </div>
 
@@ -384,8 +384,8 @@ select{cursor:pointer}
   <div class="recent-list" id="recentList"></div>
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
-    <button onclick="exportBackup()" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo</button>
-    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.21</div>
+    <button onclick="exportBackupExcel()" id="backupBtn" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo (Excel)</button>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-07-26.22</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -890,15 +890,103 @@ function renderCloudBadge(){
   if(top){top.textContent=s.icon;top.title=tooltip;top.style.color=s.topColor;}
 }
 
-function exportBackup(){
-  const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  const ts=new Date().toISOString().split('T')[0];
-  a.href=url;a.download=`ClauMedVet_respaldo_${ts}.json`;
-  document.body.appendChild(a);a.click();document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast('Respaldo descargado ✓');
+// El respaldo se genera como Excel (varias hojas, fácil de abrir y leer en una emergencia).
+// La librería SheetJS se carga solo cuando se hace clic en el botón (requiere internet en ese
+// momento), para no afectar la carga normal de la app ni el modo offline.
+let _xlsxLoadPromise=null;
+function loadXLSXLib(){
+  if(typeof XLSX!=='undefined')return Promise.resolve();
+  if(_xlsxLoadPromise)return _xlsxLoadPromise;
+  _xlsxLoadPromise=new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload=()=>resolve();
+    s.onerror=()=>{_xlsxLoadPromise=null;reject(new Error('No se pudo cargar la librería de Excel. Necesitas conexión a internet para generar el respaldo.'));};
+    document.head.appendChild(s);
+  });
+  return _xlsxLoadPromise;
+}
+async function exportBackupExcel(){
+  const btn=document.getElementById('backupBtn');
+  if(btn){btn.disabled=true;btn.textContent='Generando…';}
+  try{
+    await loadXLSXLib();
+
+    const wb=XLSX.utils.book_new();
+
+    // ── Resumen ──
+    const resumen=[
+      {Campo:'Fecha de generación',Valor:new Date().toLocaleString('es-CL')},
+      {Campo:'Total pacientes',Valor:DB.patients.length},
+      {Campo:'Total citas',Valor:DB.appointments.length},
+      {Campo:'Total cobros',Valor:DB.invoices.length},
+      {Campo:'Deuda total pendiente',Valor:fmtMoney(getPendingDebt())},
+    ];
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(resumen),'Resumen');
+
+    // ── Pacientes ──
+    const pacientes=DB.patients.map(p=>({
+      ID:p.id,Nombre:p.name,Especie:SPECIES_ES[p.species]||p.species,Raza:p.breed||'',
+      'Fecha nacimiento':p.birthdate||'',Edad:ageLabel(p),'Peso (kg)':p.weight||'',
+      Tutor:p.tutor||'',Teléfono:p.phone||'',Email:p.email||'',
+      Dirección:(p.addresses||[]).join('; '),
+      'N° consultas':(p.history||[]).length,'N° vacunas':(p.vaccinations||[]).length,'N° exámenes':(p.exams||[]).length
+    }));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(pacientes),'Pacientes');
+
+    // ── Vacunas ──
+    const vacunas=[];
+    DB.patients.forEach(p=>(p.vaccinations||[]).forEach(v=>vacunas.push({
+      Paciente:p.name,Tutor:p.tutor||'',Vacuna:v.name,'Fecha aplicada':v.date||'','Próxima dosis':v.next||''
+    })));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(vacunas),'Vacunas');
+
+    // ── Consultas ──
+    const consultas=[];
+    DB.patients.forEach(p=>(p.history||[]).forEach(h=>consultas.push({
+      Paciente:p.name,Fecha:h.date||'',Motivo:h.motivo||'','Peso (kg)':h.peso||'','Temp (°C)':h.temp||'',
+      Notas:h.notas||'','Fotos de receta':(h.recetas||[]).length
+    })));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(consultas),'Consultas');
+
+    // ── Exámenes ──
+    const examenes=[];
+    DB.patients.forEach(p=>(p.exams||[]).forEach(ex=>examenes.push({
+      Paciente:p.name,Fecha:ex.date||'',Tipo:ex.tipo||'',Notas:ex.notas||'',Archivo:ex.fileUrl||''
+    })));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(examenes),'Exámenes');
+
+    // ── Agenda / Citas ──
+    const citas=DB.appointments.map(a=>({
+      Fecha:a.date||'',Hora:a.time||'',Paciente:a.patient||'',Tutor:a.tutor||'',Teléfono:a.phone||'',
+      Dirección:a.address||'',Motivo:a.motivo||'',Notas:a.notes||'',Realizada:a.done?'Sí':'No'
+    }));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(citas),'Agenda');
+
+    // ── Cobros ──
+    const cobros=DB.invoices.map(i=>({
+      Fecha:i.date||'',Paciente:i.patient||'',Tutor:i.tutor||'',Teléfono:i.phone||'',
+      Items:(i.items||[]).map(it=>`${it.desc} x${it.qty}`).join('; '),
+      Total:fmtMoney(invTotal(i)),Pagado:fmtMoney(i.paid||0),Saldo:fmtMoney(invDebt(i)),Notas:i.notes||''
+    }));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(cobros),'Cobros');
+
+    // ── Catálogo de precios ──
+    const catalogo=[];
+    TARIFAS.forEach(cat=>cat.items.forEach(it=>catalogo.push({
+      Categoría:cat.cat,Descripción:it.desc,Precio:it.price
+    })));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(catalogo),'Catálogo');
+
+    const ts=new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb,`ClauMedVet_respaldo_${ts}.xlsx`);
+    showToast('Respaldo descargado ✓');
+  }catch(err){
+    console.error('exportBackupExcel failed',err);
+    alert(err&&err.message?err.message:'No se pudo generar el respaldo. Intenta de nuevo.');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='⬇ Descargar respaldo (Excel)';}
+  }
 }
 
 function loadDB(){try{const r=localStorage.getItem('claudmedvet_v2');if(r)DB=JSON.parse(r);}catch(e){}}
