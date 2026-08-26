@@ -332,8 +332,8 @@ select{cursor:pointer}
     <div class="login-title">ClauMedVet</div>
     <div class="login-sub">Sistema de Gestión Veterinaria</div>
     <div class="login-field">
-      <label>Usuario</label>
-      <input type="text" id="loginUser" placeholder="Tu usuario" autocomplete="username"/>
+      <label>Correo electrónico</label>
+      <input type="email" id="loginUser" placeholder="tu@correo.cl" autocomplete="username"/>
     </div>
     <div class="login-field">
       <label>Contraseña</label>
@@ -410,6 +410,8 @@ select{cursor:pointer}
 <div id="modalContainer"></div>
 <div class="toast" id="toast"></div>
 
+<!-- Cliente oficial de Supabase (necesario para autenticación real) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 // ══════════════════════════════════════════════════════
 //  CONSTANTS & DB
@@ -674,12 +676,21 @@ let DB={patients:[],appointments:[],invoices:[],nextId:1,nextAid:1,nextInvId:1};
 // ══════════════════════════════════════════════════════
 const SUPABASE_URL='https://jxhotwoeaozlqtujwodz.supabase.co';
 const SUPABASE_KEY='sb_publishable_q8oHQ5NJE6x0SrIysJVbSA_OuYX41vY';
+// Cliente de Supabase Auth — maneja login, sesión y refresco de token.
+const sbAuth = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// SB_HEADERS.Authorization se actualiza dinámicamente en setAuthHeader():
+// mientras no haya sesión, apunta a la key pública (sin acceso real, RLS
+// solo permite "authenticated"); después del login, apunta al token real
+// del usuario.
 const SB_HEADERS={
   'apikey':SUPABASE_KEY,
   'Authorization':`Bearer ${SUPABASE_KEY}`,
   'Content-Type':'application/json',
   'Prefer':'return=minimal'
 };
+function setAuthHeader(accessToken){
+  SB_HEADERS['Authorization'] = `Bearer ${accessToken || SUPABASE_KEY}`;
+}
 let cloudSyncEnabled=true;
 let cloudStatus='connecting'; // connecting | online | offline | error
 const EXAM_BUCKET='examenes';
@@ -688,7 +699,7 @@ async function uploadExamFile(file,pid){
   const path=`${pid}/${Date.now()}_${safeName}`;
   const res=await fetch(`${SUPABASE_URL}/storage/v1/object/${EXAM_BUCKET}/${path}`,{
     method:'POST',
-    headers:{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,'Content-Type':file.type||'application/octet-stream'},
+    headers:{'apikey':SUPABASE_KEY,'Authorization':SB_HEADERS['Authorization'],'Content-Type':file.type||'application/octet-stream'},
     body:file
   });
   if(!res.ok){const txt=await res.text().catch(()=>'');throw new Error(`${res.status} ${txt}`);}
@@ -700,7 +711,7 @@ async function uploadRecetaFile(file,pid,hid){
   const path=`${pid}/${hid}/${Date.now()}_${safeName}`;
   const res=await fetch(`${SUPABASE_URL}/storage/v1/object/${RECETA_BUCKET}/${path}`,{
     method:'POST',
-    headers:{'apikey':SUPABASE_KEY,'Authorization':`Bearer ${SUPABASE_KEY}`,'Content-Type':file.type||'application/octet-stream'},
+    headers:{'apikey':SUPABASE_KEY,'Authorization':SB_HEADERS['Authorization'],'Content-Type':file.type||'application/octet-stream'},
     body:file
   });
   if(!res.ok){const txt=await res.text().catch(()=>'');throw new Error(`${res.status} ${txt}`);}
@@ -2756,45 +2767,54 @@ function registerPay(invId){
 }
 
 // ══════════════════════════════════════════════════════
-//  AUTH — LOGIN / LOGOUT
+//  AUTH — LOGIN / LOGOUT (Supabase Auth real)
 // ══════════════════════════════════════════════════════
-// Credenciales — cámbialas aquí cuando quieras
-const AUTH_USER = 'constanza';
-const AUTH_PASS = 'claumedvet2024';
-const SESSION_KEY = 'cmv_session';
+// El usuario se crea una sola vez desde el dashboard de Supabase
+// (Authentication → Users). Ya no hay usuario/clave escritos en este
+// archivo — la validación la hace Supabase, no el navegador.
 
-function checkSession(){
-  return sessionStorage.getItem(SESSION_KEY) === 'ok';
+function startAppAfterLogin(){
+  document.getElementById('loginScreen').style.display='none';
+  loadDB();loadTarifasLocal();restoreViewState();renderAll();
+  pullFromCloud().then(gotCloud=>{
+    if(!gotCloud && DB.patients.length===0){initSampleData();syncAllToCloud();}
+    restoreViewState();renderAll();
+  });
 }
-function doLogin(){
-  const user = document.getElementById('loginUser').value.trim().toLowerCase();
-  const pass = document.getElementById('loginPass').value;
-  const err  = document.getElementById('loginError');
-  if(user === AUTH_USER && pass === AUTH_PASS){
-    sessionStorage.setItem(SESSION_KEY,'ok');
-    document.getElementById('loginScreen').style.display='none';
+
+async function doLogin(){
+  const email = document.getElementById('loginUser').value.trim();
+  const pass  = document.getElementById('loginPass').value;
+  const err   = document.getElementById('loginError');
+  const btn   = document.getElementById('loginBtn');
+  btn.disabled = true; btn.textContent = 'Entrando…';
+  const { data, error } = await sbAuth.auth.signInWithPassword({ email, password: pass });
+  btn.disabled = false; btn.textContent = 'Entrar';
+  if(!error && data.session){
+    setAuthHeader(data.session.access_token);
     err.style.display='none';
-    // Init app after successful login
-    loadDB();loadTarifasLocal();renderAll();
-    pullFromCloud().then(gotCloud=>{
-      if(!gotCloud && DB.patients.length===0){initSampleData();syncAllToCloud();}
-      renderAll();
-    });
+    startAppAfterLogin();
   } else {
+    err.textContent = 'Correo o contraseña incorrectos';
     err.style.display='block';
     document.getElementById('loginPass').value='';
     document.getElementById('loginPass').focus();
-    // Shake animation
     const box=document.querySelector('.login-box');
     box.style.animation='none';
     setTimeout(()=>{box.style.animation='shake .4s ease';},10);
   }
 }
-function doLogout(){
+async function doLogout(){
   if(!confirm('¿Cerrar sesión?'))return;
-  sessionStorage.removeItem(SESSION_KEY);
+  await sbAuth.auth.signOut();
+  setAuthHeader(null);
   location.reload();
 }
+
+// Mantiene SB_HEADERS al día si Supabase renueva el token en segundo plano
+sbAuth.auth.onAuthStateChange((event, session)=>{
+  if(session) setAuthHeader(session.access_token);
+});
 
 // ══════════════════════════════════════════════════════
 //  INIT
@@ -2809,16 +2829,15 @@ document.addEventListener('DOMContentLoaded', function(){
   if(pass) pass.addEventListener('keydown', function(e){ if(e.key==='Enter') doLogin(); });
 });
 
-if(checkSession()){
-  // Already logged in — hide login screen and load app
-  document.getElementById('loginScreen').style.display='none';
-  loadDB();loadTarifasLocal();restoreViewState();renderAll();
-  pullFromCloud().then(gotCloudData=>{
-    if(!gotCloudData && DB.patients.length===0){initSampleData();syncAllToCloud();}
-    restoreViewState();renderAll();
-  });
-}
-// If not logged in, login screen stays visible — doLogin() handles the rest
+// Al cargar, revisa si ya existe una sesión válida guardada por Supabase
+// (persiste en localStorage y se renueva sola mientras siga siendo válida).
+sbAuth.auth.getSession().then(({ data }) => {
+  if(data.session){
+    setAuthHeader(data.session.access_token);
+    startAppAfterLogin();
+  }
+  // Si no hay sesión, la pantalla de login queda visible — doLogin() se encarga.
+});
 
 // ── Service worker: permite que la app cargue sin internet luego de la primera visita ──
 if('serviceWorker' in navigator){
