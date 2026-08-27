@@ -11,10 +11,13 @@ on:
 jobs:
   backup:
     runs-on: ubuntu-latest
-    steps:
-      - name: Instalar cliente de PostgreSQL (v17, misma versión que el servidor de Supabase)
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client-17
+    # Corre todo el trabajo dentro de la imagen oficial de Postgres 17 —
+    # así pg_dump ya viene en la versión correcta, sin tener que instalarlo
+    # ni pelear con repositorios de apt.
+    container:
+      image: postgres:17
 
+    steps:
       - name: Generar el respaldo (pg_dump)
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -27,6 +30,9 @@ jobs:
             --file="dump/claumedvet-${STAMP}.sql"
           gzip "dump/claumedvet-${STAMP}.sql"
           echo "STAMP=${STAMP}" >> "$GITHUB_ENV"
+
+      - name: Instalar git (no viene incluido en la imagen de Postgres)
+        run: apt-get update && apt-get install -y git
 
       - name: Clonar el repositorio privado de respaldos
         env:
