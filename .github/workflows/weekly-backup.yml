@@ -1,0 +1,49 @@
+name: Respaldo semanal de la base de datos
+
+# Corre todos los lunes a las 12:00 UTC (08:00 en Chile continental,
+# hora estándar; en horario de verano serán las 09:00). También se puede
+# lanzar a mano desde la pestaña "Actions" del repo con "Run workflow".
+on:
+  schedule:
+    - cron: '0 12 * * 1'
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Instalar cliente de PostgreSQL
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Generar el respaldo (pg_dump)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -e
+          mkdir -p dump
+          STAMP=$(date -u +"%Y-%m-%d")
+          pg_dump "$SUPABASE_DB_URL" \
+            --no-owner --no-privileges \
+            --file="dump/claumedvet-${STAMP}.sql"
+          gzip "dump/claumedvet-${STAMP}.sql"
+          echo "STAMP=${STAMP}" >> "$GITHUB_ENV"
+
+      - name: Clonar el repositorio privado de respaldos
+        env:
+          BACKUP_REPO_TOKEN: ${{ secrets.BACKUP_REPO_TOKEN }}
+          BACKUP_REPO: ${{ secrets.BACKUP_REPO }}
+        run: |
+          set -e
+          git clone "https://x-access-token:${BACKUP_REPO_TOKEN}@github.com/${BACKUP_REPO}.git" backups-repo
+
+      - name: Copiar el respaldo y subirlo
+        run: |
+          set -e
+          mkdir -p backups-repo/backups
+          cp "dump/claumedvet-${STAMP}.sql.gz" "backups-repo/backups/"
+          cd backups-repo
+          git config user.name "claumedvet-backup-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add "backups/claumedvet-${STAMP}.sql.gz"
+          git commit -m "Respaldo semanal ${STAMP}" || echo "Nada nuevo que respaldar"
+          git push
