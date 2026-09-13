@@ -31,8 +31,21 @@ jobs:
           gzip "dump/claumedvet-${STAMP}.sql"
           echo "STAMP=${STAMP}" >> "$GITHUB_ENV"
 
-      - name: Instalar git (no viene incluido en la imagen de Postgres)
-        run: apt-get update && apt-get install -y git
+      - name: Instalar git y curl (no vienen incluidos en la imagen de Postgres)
+        run: apt-get update && apt-get install -y git curl
+
+      - name: Ping de actividad a la API de Supabase (evita la pausa por inactividad)
+        # El pg_dump de arriba se conecta directo a Postgres vía el Session
+        # pooler, y esa conexión NO queda registrada como "actividad" para
+        # el sistema de auto-pausa de Supabase (solo cuenta el tráfico que
+        # pasa por su API REST/Auth/Storage). Este paso hace un llamado
+        # liviano a la API — sin tocar ninguna tabla, así que no choca con
+        # las políticas RLS — para que el proyecto nunca acumule 7 días
+        # sin actividad y se pause solo.
+        run: |
+          curl -s -o /dev/null -w "Supabase API respondió: %{http_code}\n" \
+            "https://jxhotwoeaozlqtujwodz.supabase.co/rest/v1/" \
+            -H "apikey: sb_publishable_q8oHQ5NJE6x0SrIysJVbSA_OuYX41vY"
 
       - name: Clonar el repositorio privado de respaldos
         env:
