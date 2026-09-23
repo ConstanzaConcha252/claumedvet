@@ -18,17 +18,33 @@ jobs:
       image: postgres:17
 
     steps:
-      - name: Generar el respaldo (pg_dump)
+      - name: Generar el respaldo (pg_dump, con reintentos)
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        # Si la base no está disponible justo en ese momento (por ejemplo,
+        # un reinicio breve de Supabase), reintenta hasta 3 veces esperando
+        # 2 minutos entre cada intento, en vez de fallar al primer error.
         run: |
-          set -e
           mkdir -p dump
           STAMP=$(date -u +"%Y-%m-%d")
-          pg_dump "$SUPABASE_DB_URL" \
-            --no-owner --no-privileges \
-            --file="dump/claumedvet-${STAMP}.sql"
-          gzip "dump/claumedvet-${STAMP}.sql"
+          FILE="dump/claumedvet-${STAMP}.sql"
+          OK=0
+          for INTENTO in 1 2 3; do
+            echo "Intento ${INTENTO} de 3..."
+            if pg_dump "$SUPABASE_DB_URL" --no-owner --no-privileges --file="$FILE"; then
+              OK=1
+              break
+            fi
+            if [ "$INTENTO" -lt 3 ]; then
+              echo "pg_dump falló; reintentando en 2 minutos..."
+              sleep 120
+            fi
+          done
+          if [ "$OK" -ne 1 ]; then
+            echo "pg_dump falló en los 3 intentos."
+            exit 1
+          fi
+          gzip "$FILE"
           echo "STAMP=${STAMP}" >> "$GITHUB_ENV"
 
       - name: Instalar git y curl (no vienen incluidos en la imagen de Postgres)
@@ -42,8 +58,13 @@ jobs:
         # liviano a la API — sin tocar ninguna tabla, así que no choca con
         # las políticas RLS — para que el proyecto nunca acumule 7 días
         # sin actividad y se pause solo.
+        # Límite de tiempo y continue-on-error: si Supabase no responde,
+        # el ping se abandona a los 30 segundos y NO bloquea ni hace fallar
+        # el respaldo.
+        timeout-minutes: 2
+        continue-on-error: true
         run: |
-          curl -s -o /dev/null -w "Supabase API respondió: %{http_code}\n" \
+          curl -s --max-time 30 -o /dev/null -w "Supabase API respondió: %{http_code}\n" \
             "https://jxhotwoeaozlqtujwodz.supabase.co/rest/v1/" \
             -H "apikey: sb_publishable_q8oHQ5NJE6x0SrIysJVbSA_OuYX41vY"
 
