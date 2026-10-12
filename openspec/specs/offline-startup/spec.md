@@ -42,21 +42,6 @@ Cuando no haya conexión y exista una sesión de Supabase guardada en el disposi
 - **WHEN** la app se abre con conexión
 - **THEN** el arranque funciona igual que hoy (renueva el token si hace falta y sincroniza con Supabase)
 
-### Requirement: Aviso de que los cambios sin conexión pueden perderse
-Mientras la app esté en modo sin conexión, SHALL mostrar un aviso visible indicando que los cambios hechos sin internet no se guardan en la nube y pueden perderse al reconectar.
-
-#### Scenario: Aviso visible en modo sin conexión
-- **WHEN** la app abre en modo sin conexión
-- **THEN** se muestra un aviso visible en pantalla mientras no haya conexión
-
-#### Scenario: Aviso desaparece al reconectar
-- **WHEN** vuelve la conexión y Supabase renueva la sesión
-- **THEN** el aviso desaparece, el token se actualiza vía `setAuthHeader` y la app sincroniza con la nube
-
-#### Scenario: Reconexión sin cerrar la app en el iPhone
-- **WHEN** la app instalada está abierta sin conexión y vuelve internet, aunque el navegador no envíe el evento `online`
-- **THEN** en 15 segundos o menos la app renueva la sesión, sincroniza y muestra "☁️ Sincronizado" sin que haya que cerrarla
-
 ### Requirement: Teléfonos ya instalados reciben la actualización
 El service worker SHALL usar un nombre de caché nuevo para que los dispositivos con la PWA ya instalada descarguen la versión actualizada y borren la caché anterior.
 

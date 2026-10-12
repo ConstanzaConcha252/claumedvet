@@ -43,4 +43,4 @@
 - [x] 6.6 Borrar una cita offline y reconectar: no reaparece y en Supabase ya no existe
 - [x] 6.7 Choque: crear una cita offline en una pestaña y otra con el mismo ID desde otra ventana con internet; al reconectar aparece el aviso, no se sube nada y los datos locales siguen
 - [x] 6.8 (Verificado leyendo el código: `uploadRecetaFile` y `uploadExamFile` no se tocaron; ante un error muestran `alert` y hacen `return` sin cerrar el modal.) Adjuntar receta y examen offline: aparece el aviso existente y el formulario no se cierra
-- [ ] 6.9 Publicar y probar en el iPhone en modo avión con una consulta de prueba (Constanza), y luego borrarla
+- [x] 6.9 (Confirmado por Constanza en el iPhone con build 2026-10-11.5: consulta hecha en modo avión se subió sola al volver la señal.) Publicar y probar en el iPhone en modo avión con una consulta de prueba (Constanza), y luego borrarla
