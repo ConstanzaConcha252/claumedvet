@@ -16,4 +16,4 @@
 - [x] 3.1 `node --check` del service worker y del JS del HTML
 - [x] 3.2 Servidor local: los tres íconos responden 200, el manifest es JSON válido y la caché `claumedvet-shell-v3` incluye `apple-touch-icon.png`
 - [x] 3.3 Repetir las pruebas sin conexión ya existentes para confirmar que no se rompió nada
-- [ ] 3.4 Publicar y, en el iPhone, borrar el ícono, volver a agregarlo desde Safari y confirmar que aparece el logo (Constanza)
+- [x] 3.4 (Confirmado por Constanza en el iPhone con build 2026-10-12.1.) Publicar y, en el iPhone, borrar el ícono, volver a agregarlo desde Safari y confirmar que aparece el logo (Constanza)
