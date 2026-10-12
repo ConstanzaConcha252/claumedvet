@@ -14,4 +14,4 @@
 - [x] 2.2 Navegador local (ancho iPhone): escribir, tocar el ojo y ver el texto; tocar de nuevo y ver puntos; el foco sigue en el campo; el botón no dispara el login; captura de pantalla para Constanza
 - [x] 2.3 El logo del login se ve igual al ícono, con y sin conexión (captura)
 - [x] 2.4 Login fallido (contra una Supabase falsa) con la contraseña visible: el campo queda vacío y oculto
-- [ ] 2.5 Publicar y probar en el iPhone (Constanza)
+- [x] 2.5 (Confirmado por Constanza en el iPhone con build 2026-10-12.2.) Publicar y probar en el iPhone (Constanza)
