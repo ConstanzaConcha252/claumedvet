@@ -55,9 +55,11 @@ self.addEventListener('fetch', (event) => {
 
   // Archivos propios: intenta la red primero (así siempre ves la versión más
   // nueva cuando hay internet); si falla por falta de conexión, usa la última
-  // copia guardada.
+  // copia guardada. 'no-cache' evita que el navegador use su propia copia de
+  // hasta 10 minutos (GitHub Pages manda max-age=600): siempre pregunta a
+  // GitHub si hay una versión nueva.
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'no-cache' })
       .then((response) => {
         if (response.ok) {
           const copy = response.clone();
