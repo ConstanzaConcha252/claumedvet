@@ -20,7 +20,7 @@ Este cambio depende de `fix-offline-startup`, que hace que la app abra sin inter
 - `offline-sync`: los cambios y borrados hechos sin conexión se guardan como pendientes y se suben a Supabase al recuperar internet, antes de descargar datos de la nube y con detección de choques de ID.
 
 ### Modified Capabilities
-<!-- offline-startup aún no está archivado en openspec/specs/. El cambio de texto del aviso se cubre como requisito nuevo en offline-sync. -->
+- `offline-startup`: se elimina el requisito "Aviso de que los cambios sin conexión pueden perderse", que se reemplaza por "Aviso y estado de pendientes" en `offline-sync`.
 
 ## Impact
 

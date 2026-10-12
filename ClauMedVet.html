@@ -330,7 +330,7 @@ select{cursor:pointer}
 <body>
 
 <!-- AVISO SIN CONEXIÓN (se toca para ocultarlo; el 📴 de la barra sigue visible) -->
-<div id="offlineBanner" onclick="offlineBannerDismissed=true;this.style.display='none'">📴 Sin conexión: estás viendo datos guardados en este teléfono. Los cambios que hagas ahora pueden perderse al volver internet.<span class="ob-close">✕</span></div>
+<div id="offlineBanner" onclick="offlineBannerDismissed=true;this.style.display='none'">📴 Sin conexión: tus cambios se guardan en este teléfono y se subirán cuando vuelva internet.<span class="ob-close">✕</span></div>
 
 <!-- LOGIN SCREEN -->
 <div id="loginScreen">
@@ -348,7 +348,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó · build 2026-10-11.3</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-10-11.4</div>
   </div>
 </div>
 
@@ -392,7 +392,7 @@ select{cursor:pointer}
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
     <button onclick="exportBackupExcel()" id="backupBtn" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo (Excel)</button>
-    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-10-11.3</div>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-10-11.4</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -872,9 +872,46 @@ function pushInvoice(i){
     .then(()=>{cloudStatus='online';renderCloudBadge();})
     .catch((err)=>{console.error('pushInvoice failed',err);if(err&&err.isApiError){cloudStatus='error';lastCloudErrorDetail=String(err.status||'')+' '+String(err.message||'');}else{cloudStatus='offline';}renderCloudBadge();});
 }
-function pushDeletePatient(id){if(cloudSyncEnabled)sbFetch(`patients?id=eq.${id}`,{method:'DELETE'}).catch((err)=>console.error('delete patient failed',err));}
-function pushDeleteAppt(id){if(cloudSyncEnabled)sbFetch(`appointments?id=eq.${id}`,{method:'DELETE'}).catch((err)=>console.error('delete appt failed',err));}
-function pushDeleteInvoice(id){if(cloudSyncEnabled)sbFetch(`invoices?id=eq.${id}`,{method:'DELETE'}).catch((err)=>console.error('delete invoice failed',err));}
+// ── Cambios pendientes (sin conexión) ──
+// Se guardan en localStorage para no perder lo anotado sin internet:
+//  dirty/rev: hay cambios locales sin confirmar en la nube (rev cambia en cada guardado)
+//  deletes:   borrados por enviar a Supabase
+//  created:   IDs nuevos aún no subidos (para detectar choques con otro dispositivo)
+const PENDING_KEY='claudmedvet_pending_v1';
+const SYNC_TABLES=['patients','appointments','invoices'];
+const TABLE_LABEL={patients:'Paciente',appointments:'Cita',invoices:'Cobro'};
+function emptyPending(){return {dirty:false,rev:0,deletes:{patients:[],appointments:[],invoices:[]},created:{patients:[],appointments:[],invoices:[]}};}
+function loadPending(){
+  const e=emptyPending();
+  try{
+    const r=localStorage.getItem(PENDING_KEY);
+    if(r){const p=JSON.parse(r);return {...e,...p,deletes:{...e.deletes,...(p.deletes||{})},created:{...e.created,...(p.created||{})}};}
+  }catch(err){}
+  return e;
+}
+let PENDING=loadPending();
+function savePending(){try{localStorage.setItem(PENDING_KEY,JSON.stringify(PENDING));}catch(e){console.warn('No se pudo guardar la lista de cambios pendientes',e);}}
+function hasPending(){return PENDING.dirty||SYNC_TABLES.some(t=>PENDING.deletes[t].length);}
+function markDirty(){PENDING.dirty=true;PENDING.rev++;savePending();renderCloudBadge();}
+// Genera el ID de un registro nuevo y lo anota como "creado, sin subir".
+function newId(table){
+  const key={patients:'nextId',appointments:'nextAid',invoices:'nextInvId'}[table];
+  const id=DB[key]++;
+  if(!PENDING.created[table].includes(id))PENDING.created[table].push(id);
+  savePending();
+  return id;
+}
+function queueDelete(table,id){
+  if(!PENDING.deletes[table].includes(id))PENDING.deletes[table].push(id);
+  PENDING.created[table]=PENDING.created[table].filter(x=>x!==id);
+  markDirty();syncNow();
+}
+// Solo se sube con una sesión real (nunca con la publishable key).
+function hasUserSession(){return !offlineMode&&SB_HEADERS['Authorization']!==`Bearer ${SUPABASE_KEY}`;}
+
+function pushDeletePatient(id){if(cloudSyncEnabled)queueDelete('patients',id);}
+function pushDeleteAppt(id){if(cloudSyncEnabled)queueDelete('appointments',id);}
+function pushDeleteInvoice(id){if(cloudSyncEnabled)queueDelete('invoices',id);}
 function pushConfig(){
   if(!cloudSyncEnabled)return;
   const rows=[
@@ -889,10 +926,90 @@ function pushConfig(){
 // Push the ENTIRE current DB state (used after any save) — keeps it simple and consistent
 function syncAllToCloud(){
   if(!cloudSyncEnabled)return;
-  DB.patients.forEach(pushPatient);
-  DB.appointments.forEach(pushAppt);
-  DB.invoices.forEach(pushInvoice);
-  pushConfig();
+  syncNow();
+}
+
+// Sube todo lo local (borrados pendientes + upserts + contadores) y avisa si terminó bien.
+// Nunca corre dos veces a la vez: si se pide mientras corre, se repite al terminar.
+let syncInFlight=null,syncRerun=false,collisionAlertShown=false;
+function syncNow(){
+  if(!cloudSyncEnabled)return Promise.resolve(false);
+  if(syncInFlight){syncRerun=true;return syncInFlight;}
+  syncInFlight=runSync()
+    .finally(()=>{syncInFlight=null;})
+    .then(ok=>{if(syncRerun){syncRerun=false;return syncNow();}return ok;});
+  return syncInFlight;
+}
+async function runSync(){
+  if(!hasUserSession())return false;
+  const rev=PENDING.rev;
+  const created=JSON.parse(JSON.stringify(PENDING.created));
+  try{
+    // 1. Borrados hechos sin conexión
+    for(const t of SYNC_TABLES){
+      for(const id of [...PENDING.deletes[t]]){
+        await sbFetch(`${t}?id=eq.${id}`,{method:'DELETE'});
+        PENDING.deletes[t]=PENDING.deletes[t].filter(x=>x!==id);savePending();
+      }
+    }
+    // 2. Choques: un ID creado aquí que ya existe en la nube (creado desde otro dispositivo)
+    const clashes=[];
+    for(const t of SYNC_TABLES){
+      if(!created[t].length)continue;
+      const rows=await (await sbFetch(`${t}?select=id&id=in.(${created[t].join(',')})`)).json();
+      rows.forEach(r=>clashes.push(`${TABLE_LABEL[t]} #${r.id}`));
+    }
+    if(clashes.length){
+      cloudStatus='error';lastCloudErrorDetail='Mismo número ya usado en la nube: '+clashes.join(', ');
+      renderCloudBadge();
+      if(!collisionAlertShown){
+        collisionAlertShown=true;
+        alert('No se subieron los cambios hechos sin conexión: en la nube ya existe '+clashes.join(', ')+' con el mismo número (probablemente creado desde otro dispositivo).\n\nTus datos siguen guardados en este teléfono. Descarga un respaldo (botón en la barra lateral) y pide ayuda para corregirlo antes de seguir.');
+      }
+      return false;
+    }
+    // 3. Subir todos los registros locales (un upsert por registro, como siempre)
+    const toRow={patients:patientToRow,appointments:apptToRow,invoices:invoiceToRow};
+    for(const t of SYNC_TABLES){
+      await Promise.all(DB[t].map(rec=>sbFetch(`${t}?on_conflict=id`,{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(toRow[t](rec))})));
+      PENDING.created[t]=PENDING.created[t].filter(id=>!created[t].includes(id));savePending();
+    }
+    // 4. Contadores: nunca bajar el de la nube (evita choques futuros entre dispositivos)
+    const cfgRows=await (await sbFetch('app_config?select=key,value&key=in.(next_patient_id,next_appt_id,next_invoice_id)')).json();
+    const cloudCfg={};cfgRows.forEach(c=>cloudCfg[c.key]=Number(c.value)||0);
+    DB.nextId=Math.max(DB.nextId,cloudCfg.next_patient_id||0);
+    DB.nextAid=Math.max(DB.nextAid,cloudCfg.next_appt_id||0);
+    DB.nextInvId=Math.max(DB.nextInvId,cloudCfg.next_invoice_id||0);
+    saveLocalDB(DB);
+    const rows=[
+      {key:'next_patient_id',value:DB.nextId},
+      {key:'next_appt_id',value:DB.nextAid},
+      {key:'next_invoice_id',value:DB.nextInvId},
+      {key:'tarifas',value:TARIFAS}
+    ];
+    await sbFetch('app_config?on_conflict=key',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify(rows)});
+    if(PENDING.rev===rev){PENDING.dirty=false;savePending();}
+    cloudStatus='online';renderCloudBadge();setOfflineBanner(false);
+    return true;
+  }catch(err){
+    if(err&&err.isApiError){
+      console.error('runSync: Supabase respondió con un error',err);
+      cloudStatus='error';lastCloudErrorDetail=String(err.status||'')+' '+String(err.message||'');
+    }else{
+      console.warn('runSync: sin conexión, los cambios quedan pendientes',err);
+      cloudStatus='offline';setOfflineBanner(true);
+    }
+    renderCloudBadge();
+    return false;
+  }
+}
+// Primero sube lo pendiente; solo si salió bien descarga de la nube (que reemplaza lo local).
+async function syncThenPull(){
+  if(hasPending()){
+    const ok=await syncNow();
+    if(!ok)return false;
+  }
+  return pullFromCloud();
 }
 
 let lastCloudErrorDetail='';
@@ -907,8 +1024,9 @@ function renderCloudBadge(){
     storage:{icon:'🗄️',text:'Sin espacio local (revisa fotos de pacientes)',color:'#f5d48a',topColor:'var(--amber)'}
   };
   const s=map[cloudStatus]||map.connecting;
-  const tooltip=cloudStatus==='error'&&lastCloudErrorDetail?`${s.text}: ${lastCloudErrorDetail}`:s.text;
-  if(el){el.innerHTML=`${s.icon} ${s.text}`;el.style.color=s.color;el.title=tooltip;}
+  const pendingTxt=(cloudStatus==='offline'||cloudStatus==='error')&&hasPending()?' · cambios por subir':'';
+  const tooltip=(cloudStatus==='error'&&lastCloudErrorDetail?`${s.text}: ${lastCloudErrorDetail}`:s.text)+pendingTxt;
+  if(el){el.innerHTML=`${s.icon} ${s.text}${pendingTxt}`;el.style.color=s.color;el.title=tooltip;}
   if(top){top.textContent=s.icon;top.title=tooltip;top.style.color=s.topColor;}
 }
 
@@ -1039,6 +1157,8 @@ function saveLocalDB(dbObj){
 }
 function saveDB(){
   saveLocalDB(DB);
+  // Queda marcado como pendiente hasta que la nube confirme (sobrevive a cerrar la app).
+  markDirty();
   // Sync to cloud in background, non-blocking
   if(cloudSyncEnabled)syncAllToCloud();
 }
@@ -2011,7 +2131,7 @@ function saveNewPatient(){
   if(!checkPhone('f-phone'))return;
   if(!checkEmail('f-email'))return;
   const addr=document.getElementById('f-addr').value.trim();
-  const p={id:DB.nextId++,name,species:document.getElementById('f-species').value,
+  const p={id:newId('patients'),name,species:document.getElementById('f-species').value,
     breed:document.getElementById('f-breed').value.trim()||'Sin especificar',
     birthdate:document.getElementById('f-birthdate').value||null,weight:document.getElementById('f-weight').value||'0',
     tutor,phone:document.getElementById('f-phone').value.trim(),email:document.getElementById('f-email').value.trim(),
@@ -2428,7 +2548,7 @@ function saveNewAppt(){
     const p=DB.patients.find(x=>x.id===pid);
     if(p&&!(p.addresses||[]).includes(address)){if(!p.addresses)p.addresses=[];p.addresses.push(address);}
   }
-  DB.appointments.push({id:DB.nextAid++,date,time,patientId:pid||null,patient,
+  DB.appointments.push({id:newId('appointments'),date,time,patientId:pid||null,patient,
     tutor:document.getElementById('a-tutor').value.trim(),
     phone:document.getElementById('a-phone').value.trim(),
     address,motivo,notes:document.getElementById('a-notes').value.trim(),done:false});
@@ -2530,7 +2650,7 @@ function savePostApptInvoice(pid,patient,tutor,phone){
   }
   const pidNum=pid&&pid!=='null'?+pid:null;
   const newInv={
-    id:DB.nextInvId++,
+    id:newId('invoices'),
     date:document.getElementById('inv-date').value||todayStr(),
     patientId:pidNum,patient,
     tutor:document.getElementById('inv-tutor').value.trim()||tutor,
@@ -2682,7 +2802,7 @@ function saveNewInvoice(){
   let pid=patInp&&patInp._pid?patInp._pid:null;
   if(!pid){const pp=DB.patients.find(p=>p.name.toLowerCase()===patient.toLowerCase());if(pp)pid=pp.id;}
   DB.invoices.push({
-    id:DB.nextInvId++,
+    id:newId('invoices'),
     date:document.getElementById('inv-date').value||todayStr(),
     patientId:pid||null,patient,
     tutor:document.getElementById('inv-tutor').value.trim(),
@@ -2787,8 +2907,10 @@ function registerPay(invId){
 function startAppAfterLogin(){
   document.getElementById('loginScreen').style.display='none';
   loadDB();loadTarifasLocal();restoreViewState();renderAll();
-  pullFromCloud().then(gotCloud=>{
-    if(!gotCloud && DB.patients.length===0){initSampleData();syncAllToCloud();}
+  // Sube primero lo anotado sin conexión; solo después descarga de la nube.
+  // (Ya no se cargan datos de ejemplo si falla la conexión: con los cambios
+  // pendientes, terminarían subiéndose a la base real.)
+  syncThenPull().then(()=>{
     restoreViewState();renderAll();
   });
 }
@@ -2849,7 +2971,10 @@ async function doLogin(){
   }
 }
 async function doLogout(){
-  if(!confirm('¿Cerrar sesión?'))return;
+  const msg=hasPending()
+    ?'Hay cambios hechos sin conexión que todavía no se suben a la nube. Se subirán la próxima vez que entres con internet en este teléfono.\n\n¿Cerrar sesión igual?'
+    :'¿Cerrar sesión?';
+  if(!confirm(msg))return;
   if(sbAuth)await sbAuth.auth.signOut();
   setAuthHeader(null);
   location.reload();
@@ -2864,7 +2989,7 @@ function exitOfflineMode(session){
   setAuthHeader(session.access_token);
   setOfflineBanner(false);
   // Se difiere para no llamar a Supabase dentro del propio callback de auth.
-  setTimeout(()=>{pullFromCloud().then(()=>{restoreViewState();renderAll();});},0);
+  setTimeout(()=>{syncThenPull().then(()=>{restoreViewState();renderAll();});},0);
 }
 // Al volver la señal, vuelve a sincronizar sin tener que cerrar la app.
 // En el iPhone (app instalada) el evento 'online' no siempre llega, por eso
@@ -2873,14 +2998,15 @@ let reconnecting=false;
 function checkReconnect(){
   if(reconnecting||!sbAuth||!navigator.onLine)return;
   const appOpen=document.getElementById('loginScreen').style.display==='none';
-  if(!offlineMode&&!(appOpen&&cloudStatus==='offline'))return;
+  // También reintenta si quedaron cambios por subir (por ejemplo, un guardado que falló).
+  if(!offlineMode&&!(appOpen&&(cloudStatus==='offline'||hasPending())))return;
   reconnecting=true;
   // getSession() renueva el token si venció y actualiza SB_HEADERS vía onAuthStateChange.
   sbAuth.auth.getSession().then(({ data })=>{
     if(!data.session)return;
     if(offlineMode){exitOfflineMode(data.session);return;}
     setAuthHeader(data.session.access_token);
-    return pullFromCloud().then(ok=>{if(ok){restoreViewState();renderAll();}});
+    return syncThenPull().then(ok=>{if(ok){restoreViewState();renderAll();}});
   }).catch(()=>{}).finally(()=>{reconnecting=false;});
 }
 window.addEventListener('online',checkReconnect);
@@ -2888,6 +3014,8 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 setInterval(checkReconnect,15000);
 if(sbAuth) sbAuth.auth.onAuthStateChange((event, session)=>{
   if(session) setAuthHeader(session.access_token);
+  // Token renovado con cambios por subir: intenta subirlos (fuera del callback de auth).
+  if(!offlineMode&&session&&hasPending()&&(event==='TOKEN_REFRESHED'||event==='SIGNED_IN'))setTimeout(checkReconnect,0);
   if(!offlineMode)return;
   if(session) exitOfflineMode(session);
   else if(event==='SIGNED_OUT') location.reload();

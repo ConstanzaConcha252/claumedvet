@@ -1,5 +1,8 @@
-## ADDED Requirements
+# offline-startup Specification
 
+## Purpose
+TBD - created by archiving change fix-offline-startup. Update Purpose after archive.
+## Requirements
 ### Requirement: Librería de login disponible sin internet
 El service worker SHALL guardar una copia de la librería `supabase-js` (URL con versión exacta) y SHALL entregarla desde la caché cuando no haya conexión. El service worker MUST NOT guardar en caché respuestas de la API de Supabase (`*.supabase.co`) ni de ningún otro dominio externo.
 
@@ -50,9 +53,14 @@ Mientras la app esté en modo sin conexión, SHALL mostrar un aviso visible indi
 - **WHEN** vuelve la conexión y Supabase renueva la sesión
 - **THEN** el aviso desaparece, el token se actualiza vía `setAuthHeader` y la app sincroniza con la nube
 
+#### Scenario: Reconexión sin cerrar la app en el iPhone
+- **WHEN** la app instalada está abierta sin conexión y vuelve internet, aunque el navegador no envíe el evento `online`
+- **THEN** en 15 segundos o menos la app renueva la sesión, sincroniza y muestra "☁️ Sincronizado" sin que haya que cerrarla
+
 ### Requirement: Teléfonos ya instalados reciben la actualización
 El service worker SHALL usar un nombre de caché nuevo para que los dispositivos con la PWA ya instalada descarguen la versión actualizada y borren la caché anterior.
 
 #### Scenario: Actualización en iPhone con la app instalada
 - **WHEN** Constanza abre la app instalada con internet después del despliegue
 - **THEN** el nuevo service worker se instala, borra `claumedvet-shell-v1` y guarda la librería en `claumedvet-shell-v2`
+

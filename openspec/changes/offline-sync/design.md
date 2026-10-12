@@ -63,6 +63,14 @@ Se mantiene un upsert por registro, en vez de un POST en lote por tabla, porque 
 - `#offlineBanner`: el texto cambia a "📴 Sin conexión: tus cambios se guardan en este teléfono y se subirán cuando vuelva internet."
 - `renderCloudBadge()`: si `pending.dirty`, agrega " · cambios por subir" al texto.
 
+### 6. Ajustes hechos durante la implementación
+- **Sin datos de ejemplo automáticos:** `startAppAfterLogin()` ya no llama a `initSampleData()` cuando falla la conexión. Con los pendientes persistentes, esos pacientes de ejemplo se habrían subido a la base real al reconectar.
+- **IDs nuevos:** se usa el helper `newId(tabla)` en los 4 puntos de creación. Genera el ID y lo anota en `created`.
+- **Borrados:** `pushDelete*()` siempre encolan el borrado y llaman a `syncNow()`, no solo cuando falla. Así no se pierden borrados hechos en `offlineMode`, donde no hay token de usuario y el DELETE fallaría con 401 en vez de un error de red.
+- **Reintento:** se reutiliza `checkReconnect()` de `fix-offline-startup` (cada 15 s, `online` y `visibilitychange`). Ahora también corre si `hasPending()` y usa `syncThenPull()`.
+- **Cerrar sesión con pendientes:** el `confirm` avisa que hay cambios sin subir; se subirán la próxima vez que se entre con internet en ese teléfono.
+- **Después de un choque, la sincronización queda detenida:** mientras haya un ID en `created` que choca, cada intento vuelve a detectarlo y no sube nada. Es intencional, para no pisar datos; hay que resolverlo a mano.
+
 ## Risks / Trade-offs
 
 - **Mismo registro editado en dos dispositivos:** gana el último que sube, igual que hoy. → Recomendación de uso: un dispositivo a la vez. Queda documentado.

@@ -62,6 +62,14 @@ En modo sin conexión, el aviso SHALL decir que los cambios se guardan en el tel
 - **WHEN** hay cambios pendientes
 - **THEN** el indicador de nube lo muestra (por ejemplo, "📴 Sin conexión · cambios por subir")
 
+#### Scenario: Aviso desaparece al reconectar
+- **WHEN** vuelve la conexión, Supabase renueva la sesión y los pendientes se suben bien
+- **THEN** el aviso desaparece, el token se actualiza vía `setAuthHeader` y la app sincroniza con la nube
+
+#### Scenario: Reconexión sin cerrar la app en el iPhone
+- **WHEN** la app instalada está abierta sin conexión y vuelve internet, aunque el navegador no envíe el evento `online`
+- **THEN** en 15 segundos o menos la app renueva la sesión, sube los pendientes, sincroniza y muestra "☁️ Sincronizado" sin que haya que cerrarla
+
 ### Requirement: Archivos adjuntos requieren conexión
 Al intentar adjuntar un examen o receta sin conexión, la app SHALL mostrar un mensaje claro de que adjuntar archivos requiere internet, sin perder el resto del formulario.
 

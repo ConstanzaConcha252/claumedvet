@@ -32,10 +32,10 @@
 ## 6. Pruebas
 
 - [x] 6.1 Revisar que no haya errores de sintaxis: abrir la app con `python -m http.server` y mirar la consola
-- [ ] 6.2 (Caché verificada: tiene `supabase.js` y nada de `supabase.co`. Falta que Constanza pruebe el login real en 6.8.) Escritorio, con internet: login, sincronización y ☁️ funcionan igual que antes; en DevTools → Application aparece la caché `claumedvet-shell-v2` con `supabase.js`, sin respuestas de `supabase.co`
+- [x] 6.2 (Caché verificada en el escritorio; login y sincronización reales confirmados por Constanza en el iPhone.) Escritorio, con internet: login, sincronización y ☁️ funcionan igual que antes; en DevTools → Application aparece la caché `claumedvet-shell-v2` con `supabase.js`, sin respuestas de `supabase.co`
 - [x] 6.3 Escritorio, DevTools → Network "Offline": la app abre con los datos locales, muestra 📴 y el aviso
 - [x] 6.4 Simular un token vencido (editar `expires_at` en la sesión guardada) y abrir offline: la app abre en modo consulta y la sesión guardada **no** se borra. Si se borra, mover `hasStoredSession()` antes de `getSession()` según el design
-- [ ] 6.5 (Requiere la sesión real de Constanza, se prueba en 6.8) Volver a "Online": el aviso desaparece, el token se renueva y se sincroniza
+- [x] 6.5 (Confirmado en el iPhone con build 2026-10-11.3, sin cerrar la app) Volver a "Online": el aviso desaparece, el token se renueva y se sincroniza
 - [x] 6.6 Cerrar sesión y abrir offline: se muestra el login y no se ven datos
 - [x] 6.7 Borrar la caché del service worker y abrir offline: se ve el mensaje "Se necesita conexión…" y no hay errores en la consola
-- [ ] 6.8 Publicar y, en el iPhone, abrir la PWA una vez con internet; después probar en modo avión (Constanza)
+- [x] 6.8 Publicar y, en el iPhone, abrir la PWA una vez con internet; después probar en modo avión (Constanza)
