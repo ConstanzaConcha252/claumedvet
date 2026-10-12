@@ -348,7 +348,7 @@ select{cursor:pointer}
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError">Usuario o contraseña incorrectos</div>
-    <div class="login-version">ClauMedVet · Curicó · build 2026-10-11.4</div>
+    <div class="login-version">ClauMedVet · Curicó · build 2026-10-11.5</div>
   </div>
 </div>
 
@@ -392,7 +392,7 @@ select{cursor:pointer}
   <div class="sidebar-bottom" id="cloudStatusBadge">🔄 Conectando…</div>
   <div style="padding:0 14px 12px;">
     <button onclick="exportBackupExcel()" id="backupBtn" style="width:100%;padding:7px;border-radius:8px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:rgba(255,255,255,.8);font-size:11px;cursor:pointer;font-family:'DM Sans',sans-serif;">⬇ Descargar respaldo (Excel)</button>
-    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-10-11.4</div>
+    <div style="text-align:center;font-size:9px;color:rgba(255,255,255,.35);margin-top:8px;">build 2026-10-11.5</div>
   </div>
 </aside>
 <div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
@@ -2996,8 +2996,13 @@ function exitOfflineMode(session){
 // además se revisa cada 15 s mientras la app esté sin conexión.
 let reconnecting=false;
 function checkReconnect(){
-  if(reconnecting||!sbAuth||!navigator.onLine)return;
   const appOpen=document.getElementById('loginScreen').style.display==='none';
+  // Se cortó la señal estando la app abierta: mostrarlo de inmediato, sin esperar a guardar algo.
+  if(!navigator.onLine){
+    if(appOpen&&(cloudStatus==='online'||cloudStatus==='connecting')){cloudStatus='offline';renderCloudBadge();setOfflineBanner(true);}
+    return;
+  }
+  if(reconnecting||!sbAuth)return;
   // También reintenta si quedaron cambios por subir (por ejemplo, un guardado que falló).
   if(!offlineMode&&!(appOpen&&(cloudStatus==='offline'||hasPending())))return;
   reconnecting=true;
@@ -3010,6 +3015,7 @@ function checkReconnect(){
   }).catch(()=>{}).finally(()=>{reconnecting=false;});
 }
 window.addEventListener('online',checkReconnect);
+window.addEventListener('offline',checkReconnect);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkReconnect();});
 setInterval(checkReconnect,15000);
 if(sbAuth) sbAuth.auth.onAuthStateChange((event, session)=>{
