@@ -75,6 +75,8 @@ sbAuth.auth.getSession().then(({ data, error }) => {
 
 Además, al volver la señal (evento `online`) o al volver a la app (`visibilitychange`), se llama a `getSession()` para intentar salir del modo sin conexión.
 
+**Corrección tras la prueba en el iPhone:** en la PWA instalada, el evento `online` no llegaba, así que solo se sincronizaba al cerrar y abrir la app. Ahora `checkReconnect()` también corre cada 15 s mientras la app esté sin conexión, ya sea en `offlineMode` o en modo normal con `cloudStatus === 'offline'`. Renueva la sesión con `getSession()` y ejecuta `pullFromCloud()`. Además, `pullFromCloud()` muestra el aviso cuando falla por red y lo oculta cuando sale bien.
+
 ### 6. Aviso visual
 **Implementado abajo, no arriba:** en el iPhone, una franja arriba tapaba la barra superior. Quedó como franja fija **abajo**, que respeta la zona segura del iPhone y se oculta con un toque. El 📴 del indicador sigue visible.
 

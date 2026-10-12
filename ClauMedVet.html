@@ -330,7 +330,7 @@ select{cursor:pointer}
 <body>
 
 <!-- AVISO SIN CONEXIÓN (se toca para ocultarlo; el 📴 de la barra sigue visible) -->
-<div id="offlineBanner" onclick="this.style.display='none'">📴 Sin conexión: estás viendo datos guardados en este teléfono. Los cambios que hagas ahora pueden perderse al volver internet.<span class="ob-close">✕</span></div>
+<div id="offlineBanner" onclick="offlineBannerDismissed=true;this.style.display='none'">📴 Sin conexión: estás viendo datos guardados en este teléfono. Los cambios que hagas ahora pueden perderse al volver internet.<span class="ob-close">✕</span></div>
 
 <!-- LOGIN SCREEN -->
 <div id="loginScreen">
@@ -837,6 +837,7 @@ async function pullFromCloud(){
       cloudStatus='online';
     }
     renderCloudBadge();
+    setOfflineBanner(false);
     return true;
   }catch(err){
     if(err&&err.isApiError){
@@ -845,6 +846,7 @@ async function pullFromCloud(){
     }else{
       console.warn('No se pudo conectar a Supabase, usando datos locales.',err);
       cloudStatus='offline';
+      setOfflineBanner(true);
     }
     renderCloudBadge();
     return false;
@@ -2806,9 +2808,12 @@ function hasStoredSession(){
 function isNetworkError(error){
   return !!error&&(error.name==='AuthRetryableFetchError'||error.status===0);
 }
+// Si se ocultó con un toque, no vuelve a aparecer hasta que se recupere la conexión.
+let offlineBannerDismissed=false;
 function setOfflineBanner(show){
   const b=document.getElementById('offlineBanner');
-  if(b)b.style.display=show?'block':'none';
+  if(!show)offlineBannerDismissed=false;
+  if(b)b.style.display=(show&&!offlineBannerDismissed)?'block':'none';
 }
 function startAppOffline(){
   offlineMode=true;
@@ -2861,13 +2866,26 @@ function exitOfflineMode(session){
   // Se difiere para no llamar a Supabase dentro del propio callback de auth.
   setTimeout(()=>{pullFromCloud().then(()=>{restoreViewState();renderAll();});},0);
 }
-// Al volver la señal (o al volver a la app con señal), intenta salir del modo sin conexión.
-function tryExitOfflineMode(){
-  if(!offlineMode||!sbAuth||!navigator.onLine)return;
-  sbAuth.auth.getSession().then(({ data })=>exitOfflineMode(data.session)).catch(()=>{});
+// Al volver la señal, vuelve a sincronizar sin tener que cerrar la app.
+// En el iPhone (app instalada) el evento 'online' no siempre llega, por eso
+// además se revisa cada 15 s mientras la app esté sin conexión.
+let reconnecting=false;
+function checkReconnect(){
+  if(reconnecting||!sbAuth||!navigator.onLine)return;
+  const appOpen=document.getElementById('loginScreen').style.display==='none';
+  if(!offlineMode&&!(appOpen&&cloudStatus==='offline'))return;
+  reconnecting=true;
+  // getSession() renueva el token si venció y actualiza SB_HEADERS vía onAuthStateChange.
+  sbAuth.auth.getSession().then(({ data })=>{
+    if(!data.session)return;
+    if(offlineMode){exitOfflineMode(data.session);return;}
+    setAuthHeader(data.session.access_token);
+    return pullFromCloud().then(ok=>{if(ok){restoreViewState();renderAll();}});
+  }).catch(()=>{}).finally(()=>{reconnecting=false;});
 }
-window.addEventListener('online',tryExitOfflineMode);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')tryExitOfflineMode();});
+window.addEventListener('online',checkReconnect);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')checkReconnect();});
+setInterval(checkReconnect,15000);
 if(sbAuth) sbAuth.auth.onAuthStateChange((event, session)=>{
   if(session) setAuthHeader(session.access_token);
   if(!offlineMode)return;
