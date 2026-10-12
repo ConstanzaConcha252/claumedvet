@@ -52,7 +52,7 @@ App web para gestionar la práctica veterinaria a domicilio de Constanza en Curi
 
 Constanza usa la app instalada en el iPhone ("Agregar a pantalla de inicio") y la usa en terreno con mala señal. Specs: `openspec/specs/offline-startup` y `openspec/specs/offline-sync`.
 
-- **Service worker** (caché `claumedvet-shell-v2`): los archivos propios van con "red primero" y `cache: 'no-cache'`, para no usar la copia de 10 minutos de GitHub Pages. La librería `supabase-js` va con "caché primero". **Nunca** guarda respuestas de `*.supabase.co`: los datos clínicos no entran a esa caché.
+- **Service worker** (caché `claumedvet-shell-v3`): los archivos propios van con "red primero" y `cache: 'no-cache'`, para no usar la copia de 10 minutos de GitHub Pages. La librería `supabase-js` va con "caché primero". **Nunca** guarda respuestas de `*.supabase.co`: los datos clínicos no entran a esa caché.
 - **Arranque sin red:** si hay sesión guardada (`hasStoredSession()`) y `getSession()` no responde en 1,5 s (sin red) o 4 s (señal mala), abre con `startAppOffline()` usando los datos locales (`offlineMode = true`). Supabase reintenta renovar el token hasta ~30 s sin red; por eso existe ese temporizador.
 - **Cambios pendientes:** se guardan en `localStorage['claudmedvet_pending_v1']` con `dirty`/`rev`, `deletes` (borrados en cola) y `created` (IDs nuevos sin subir, generados con `newId(tabla)`).
 - **Orden obligatorio:** `syncThenPull()` sube primero (`syncNow()`) y solo si sale bien llama a `pullFromCloud()`. No llamar a `pullFromCloud()` directo cuando puede haber pendientes, porque se perderían.

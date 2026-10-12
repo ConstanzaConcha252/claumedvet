@@ -4,7 +4,7 @@
   "start_url": "./ClauMedVet.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#145f6e",
+  "background_color": "#1a8fa0",
   "theme_color": "#1a8fa0",
   "lang": "es-CL",
   "icons": [

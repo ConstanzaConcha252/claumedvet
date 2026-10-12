@@ -1,11 +1,12 @@
 // Service worker de ClauMedVet — permite que la app cargue sin internet
 // una vez que se abrió al menos una vez con conexión.
-const CACHE_NAME = 'claumedvet-shell-v2';
+const CACHE_NAME = 'claumedvet-shell-v3';
 const APP_SHELL = [
   './ClauMedVet.html',
   './manifest.json',
   './icon-192.png',
-  './icon-512.png'
+  './icon-512.png',
+  './apple-touch-icon.png'
 ];
 // Librería de login (Supabase Auth). Debe ser EXACTAMENTE la misma URL que
 // carga ClauMedVet.html. Es la única URL externa que se guarda: las llamadas
